@@ -1,0 +1,25 @@
+# Mi Hub · Mantener Supabase activo
+# Toca la base de datos cada 3 días para que el plan gratuito no pause el proyecto.
+# Va en GitHub en la ruta: .github/workflows/keep-alive.yml
+name: Mantener Supabase activo
+
+on:
+  schedule:
+    - cron: "17 8 */3 * *"   # cada 3 días, por la mañana
+  workflow_dispatch:          # permite lanzarlo a mano desde la pestaña Actions
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar a la función ping de Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          curl --fail --silent --show-error -X POST "$SUPABASE_URL/rest/v1/rpc/ping" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}'
+          echo ""
+          echo "Supabase sigue activo."
