@@ -31,6 +31,7 @@ MOD.inicio = {
       <div class="line"><span class="daynum">${now.getDate()}</span><span class="month">${esc(fmt(now, { month: "long" }))}</span></div>
     </div>
 
+    ${(() => { const al = expiringItems(); return al.length ? `<button class="alert-box home-alert" data-go="datos">${al.map(x => `<div><b>${esc(x.label)}</b>${expiryText(x)}</div>`).join("")}</button>` : ""; })()}
     <div class="tiles">
       <button class="tile" data-go="tareas">
         <span class="t-lbl">Tareas para hoy</span>
@@ -54,13 +55,17 @@ MOD.inicio = {
       </button>
     </div>
 
+    ${(() => { const ds = dietTodaySummary(); if (!ds.tg && !ds.has) return "";
+      return `<button class="diet-strip" data-go="dieta"><span class="ds-l">Dieta de hoy</span>
+        <span class="ds-row"><span>Calorías</span><b>${fmtNum(ds.t.kcal, 0)}${ds.tg ? ` / ${fmtNum(ds.tg.kcal, 0)}` : ""}</b></span>${ds.tg ? bar(ds.t.kcal / ds.tg.kcal * 100, "var(--ink)") : ""}
+        <span class="ds-row"><span>Proteína</span><b>${fmtNum(ds.t.p, 0)}${ds.tg ? ` / ${fmtNum(ds.tg.p, 0)} g` : " g"}</b></span>${ds.tg ? bar(ds.t.p / ds.tg.p * 100) : ""}</button>`; })()}
     ${evs.length ? `<div class="block"><h2>Agenda de hoy <button data-act="newEvent">Añadir</button></h2><div class="list">${evs.map(e => eventRow(e, k)).join("")}</div></div>` : ""}
     ${tToday.length ? `<div class="block"><h2>Tareas para hoy <button data-act="newTask">Añadir</button></h2><div class="list">${tToday.map(taskRow).join("")}</div></div>` : ""}
 
     <div class="block"><h2>Módulos</h2>
       <div class="mods">
         ${modTile("calendario", "Calendario")}${modTile("tareas", "Tareas")}${modTile("entreno", "Entreno")}${modTile("finanzas", "Finanzas")}
-        ${modTile("dieta", "Dieta", true)}${modTile("salud", "Salud", true)}${modTile("datos", "Datos personales", true)}${modTile("ajustes", "Ajustes")}
+        ${modTile("dieta", "Dieta")}${modTile("salud", "Salud")}${modTile("datos", "Datos personales")}${modTile("ajustes", "Ajustes")}
       </div>
     </div>`;
   },

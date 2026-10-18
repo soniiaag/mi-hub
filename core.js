@@ -2,7 +2,7 @@
 /* =====================================================================
    Mi Hub · núcleo (utilidades, datos, navegación, formularios)
    ===================================================================== */
-const APP_VERSION = "Fase 2";
+const APP_VERSION = "Fase 3";
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -54,7 +54,7 @@ function errMsg(e) {
   const m = (e && (e.message || e.error_description)) || "";
   if (/JWT|token/i.test(m)) return "La sesión ha caducado. Vuelve a entrar.";
   if (/fetch|network/i.test(m)) return "No se ha podido conectar con la base de datos. Revisa la conexión y vuelve a intentarlo.";
-  if (/does not exist|Could not find the table|schema cache/i.test(m)) return "Falta actualizar la base de datos: ejecuta schema-fase2.sql en Supabase.";
+  if (/does not exist|Could not find the table|schema cache/i.test(m)) return "Falta actualizar la base de datos: ejecuta el último script schema-fase en Supabase.";
   return "No se ha guardado: " + (m || "error desconocido");
 }
 
@@ -69,12 +69,13 @@ const db = configured ? supabase.createClient(CFG.SUPABASE_URL.replace(/\/(rest\
 
 const TABLES = ["events", "tasks",
   "fit_exercises", "fit_routines", "fit_routine_exercises", "fit_schedule", "fit_sessions", "fit_sets",
-  "fin_accounts", "fin_balances", "fin_transactions", "fin_recurring", "fin_budgets", "fin_goals"];
+  "fin_accounts", "fin_balances", "fin_transactions", "fin_recurring", "fin_budgets", "fin_goals",
+  "user_profile", "body_measurements", "foods", "meal_entries", "diet_template", "personal_items", "event_categories"];
 
 const S = { user: null, d: {}, loaded: false, needsMigration: false, route: { mod: "inicio" }, ui: {} };
 TABLES.forEach(t => S.d[t] = []);
 
-const CACHE_KEY = "mihub-cache-v2";
+const CACHE_KEY = "mihub-cache-v3";
 function saveCache() {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ uid: S.user?.id, d: S.d, at: Date.now() })); } catch (_) {}
 }
@@ -135,7 +136,8 @@ const CASCADE = {
   fit_sessions: [["fit_sets", "session_id"]],
   fit_routines: [["fit_routine_exercises", "routine_id"]],
   fit_exercises: [["fit_routine_exercises", "exercise_id"]],
-  fin_accounts: [["fin_balances", "account_id"]]
+  fin_accounts: [["fin_balances", "account_id"]],
+  foods: [["meal_entries", "food_id"], ["diet_template", "food_id"]]
 };
 async function remove(t, id) {
   const { error } = await db.from(t).delete().eq("id", id);
@@ -169,7 +171,7 @@ window.addEventListener("popstate", e => { S.route = e.state || { mod: "inicio" 
 function render() {
   if (!S.user) return;
   const m = MOD[S.route.mod] || MOD.inicio;
-  $("#view").innerHTML = (S.needsMigration ? `<div class="banner warn">Falta actualizar la base de datos. Ejecuta <b>schema-fase2.sql</b> en Supabase y vuelve a abrir la app.</div>` : "") + m.render(S.route);
+  $("#view").innerHTML = (S.needsMigration ? `<div class="banner warn">Falta actualizar la base de datos. Ejecuta en Supabase los scripts de actualización que te faltan (<b>schema-fase2.sql</b> y/o <b>schema-fase3.sql</b>) y vuelve a abrir la app.</div>` : "") + m.render(S.route);
   const f = m.fab ? m.fab(S.route) : null;
   const fab = $("#fab");
   fab.classList.toggle("hidden", !f);

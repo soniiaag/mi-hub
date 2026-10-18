@@ -9,6 +9,46 @@ const PRIO = { 1: "Alta", 2: "Normal", 3: "Baja" };
 const RECUR = [["none", "No se repite"], ["daily", "Cada día"], ["weekly", "Cada semana"], ["monthly", "Cada mes"], ["yearly", "Cada año"]];
 const ICON_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
 
+/* ---------- Categorías ---------- */
+S.ui.calFilter = [];
+const DEFAULT_CATS = [["Trabajo", "azul"], ["Cumpleaños", "ciruela"], ["Festivo", "coral"], ["Viaje", "ambar"]];
+const catsSorted = () => [...S.d.event_categories].sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at));
+const festivoCat = () => S.d.event_categories.find(c => c.name.toLowerCase() === "festivo");
+let seedingCats = false;
+document.addEventListener("hub:loaded", async () => {
+  if (seedingCats || S.needsMigration || S.d.event_categories.length || localStorage.getItem("mihub-cats-seeded-" + S.user?.id)) return;
+  seedingCats = true;
+  try { await insertMany("event_categories", DEFAULT_CATS.map(([name, color], i) => ({ name, color, position: i }))); localStorage.setItem("mihub-cats-seeded-" + S.user?.id, "1"); render(); }
+  catch (_) {} finally { seedingCats = false; }
+});
+
+/* ---------- Festivos (se calculan, no hace falta apuntarlos) ---------- */
+function easter(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(y, month - 1, day);
+}
+const HOL_CACHE = {};
+function holidaysOf(y) {
+  const region = profile()?.holiday_region || "", key = y + region;
+  if (HOL_CACHE[key]) return HOL_CACHE[key];
+  const e = easter(y), out = {};
+  const add = (d, t) => out[keyOf(d)] = t;
+  add(new Date(y, 0, 1), "Año Nuevo"); add(new Date(y, 0, 6), "Reyes"); add(addDays(e, -2), "Viernes Santo");
+  add(new Date(y, 4, 1), "Día del Trabajo"); add(new Date(y, 7, 15), "Asunción de la Virgen"); add(new Date(y, 9, 12), "Fiesta Nacional de España");
+  add(new Date(y, 10, 1), "Todos los Santos"); add(new Date(y, 11, 6), "Día de la Constitución"); add(new Date(y, 11, 8), "Inmaculada Concepción");
+  add(new Date(y, 11, 25), "Navidad");
+  if (region === "cataluna") { add(addDays(e, 1), "Lunes de Pascua"); add(new Date(y, 5, 24), "Sant Joan"); add(new Date(y, 8, 11), "Diada de Catalunya"); add(new Date(y, 11, 26), "Sant Esteve"); }
+  return HOL_CACHE[key] = out;
+}
+function holidayOn(k) {
+  if (profile()?.show_holidays === false) return null;
+  const t = holidaysOf(+k.slice(0, 4))[k]; if (!t) return null;
+  const d = fromKey(k);
+  return { id: "hol-" + k, holiday: true, title: t, all_day: true, start_at: startOfDay(d).toISOString(), end_at: endOfDay(d).toISOString(), color: festivoCat()?.color || "coral", recur: "none", category_id: festivoCat()?.id || "festivo" };
+}
+
 /* ---------- Consultas ---------- */
 function occursOn(e, k) {
   const d = fromKey(k), a = startOfDay(d).getTime(), b = endOfDay(d).getTime();
@@ -24,8 +64,12 @@ function occursOn(e, k) {
   }
   return false;
 }
-function eventsOn(k) {
-  return S.d.events.filter(e => occursOn(e, k))
+function eventsOn(k, filtered = false) {
+  const hol = holidayOn(k), f = S.ui.calFilter;
+  let list = S.d.events.filter(e => occursOn(e, k));
+  if (hol) list.push(hol);
+  if (filtered && f.length) list = list.filter(e => f.includes(e.category_id || "none") || (e.holiday && f.includes(festivoCat()?.id)));
+  return list
     .sort((x, y) => (y.all_day - x.all_day) || timeOf(new Date(x.start_at)).localeCompare(timeOf(new Date(y.start_at))));
 }
 const isRecur = e => e.recur && e.recur !== "none";
@@ -43,8 +87,9 @@ const tasksForToday = () => sortTasks(pendingTasks().filter(t => t.due_date && t
 /* ---------- Filas ---------- */
 function eventRow(e, k) {
   const showEnd = !e.all_day && (isRecur(e) || keyOf(new Date(e.start_at)) === k);
-  const meta = [e.location, showEnd ? "hasta " + timeOf(new Date(e.end_at)) : "", isRecur(e) ? RECUR.find(r => r[0] === e.recur)[1].toLowerCase() : ""].filter(Boolean).join(", ");
-  return `<button class="row" data-act="editEvent" data-id="${e.id}">
+  const cat = e.holiday ? (festivoCat()?.name || "Festivo") : e.category_id ? byId("event_categories", e.category_id)?.name : "";
+  const meta = [cat, e.location, showEnd ? "hasta " + timeOf(new Date(e.end_at)) : "", isRecur(e) && e.recur !== "yearly" ? RECUR.find(r => r[0] === e.recur)[1].toLowerCase() : ""].filter(Boolean).join(", ");
+  return `<button class="row" ${e.holiday ? `data-act="holidayInfo" data-t="${esc(e.title)}"` : `data-act="editEvent" data-id="${e.id}"`}>
     <span class="time">${esc(eventTimeLabel(e, k))}</span>
     <span class="bar" style="background:${colorVar(e.color)}"></span>
     <span class="body"><span class="title">${esc(e.title)}</span>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}</span>
@@ -71,14 +116,14 @@ MOD.calendario = {
     for (let i = 0; i < 42; i++) {
       const d = addDays(start, i), k = keyOf(d);
       if (i >= 35 && d.getMonth() !== m.getMonth()) break;
-      const evs = eventsOn(k).slice(0, 3);
+      const evs = eventsOn(k, true).slice(0, 3);
       const cls = ["day", d.getMonth() !== m.getMonth() ? "out" : "", k === t0 ? "today" : "", k === S.ui.calSel ? "sel" : ""].join(" ");
       cells += `<button class="${cls}" data-act="calDay" data-day="${k}" aria-label="${esc(fmt(d, { weekday: "long", day: "numeric", month: "long" }))}${evs.length ? `, ${evs.length} eventos` : ""}">
         <span class="n">${d.getDate()}</span><span class="dots">${evs.map(e => `<i style="background:${colorVar(e.color)}"></i>`).join("")}</span></button>`;
     }
-    const sel = eventsOn(S.ui.calSel);
+    const sel = eventsOn(S.ui.calSel, true), f = S.ui.calFilter;
     const title = cap(fmt(m, { month: "long", year: m.getFullYear() === new Date().getFullYear() ? undefined : "numeric" }));
-    return modHead("Calendario") + `
+    return modHead("Calendario", ["inicio"], `<button class="btn-sm" data-act="manageCats">Categorías</button>`) + `
     <div class="cal-top">
       <h2 class="cal-month">${esc(title)}</h2>
       <div class="cal-nav">
@@ -87,13 +132,19 @@ MOD.calendario = {
         <button class="icon-btn" data-act="calNav" data-v="1" aria-label="Mes siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button>
       </div>
     </div>
+    <div class="mfilter cal-filter">
+      <button data-act="calFilter" data-v="" aria-pressed="${!f.length}">Todas</button>
+      ${catsSorted().map(c => `<button data-act="calFilter" data-v="${c.id}" aria-pressed="${f.includes(c.id)}"><i style="background:${colorVar(c.color)}"></i>${esc(c.name)}</button>`).join("")}
+      <button data-act="calFilter" data-v="none" aria-pressed="${f.includes("none")}">Sin categoría</button>
+    </div>
     <div class="dow">${["L", "M", "X", "J", "V", "S", "D"].map(x => `<div>${x}</div>`).join("")}</div>
     <div class="grid">${cells}</div>
     <div class="sel-day">
       <h2>${esc(cap(fmt(fromKey(S.ui.calSel), { weekday: "long", day: "numeric", month: "long" })))}</h2>
       ${sel.length ? `<div class="list">${sel.map(e => eventRow(e, S.ui.calSel)).join("")}</div>`
-        : `<div class="empty">Día libre. <button data-act="newEvent">Añadir un evento</button></div>`}
-    </div>`;
+        : `<div class="empty">${f.length ? "Nada de estas categorías este día." : `Día libre. <button data-act="newEvent">Añadir un evento</button>`}</div>`}
+    </div>
+    ${f.length ? upcomingFiltered() : ""}`;
   },
   fab: () => ({ label: "Añadir evento", fn: () => openEvent(null, S.ui.calSel) })
 };
@@ -107,6 +158,47 @@ ACT.calNav = (el, d) => {
   else S.ui.calMonth = new Date(S.ui.calMonth.getFullYear(), S.ui.calMonth.getMonth() + Number(d.v), 1);
   render();
 };
+function upcomingFiltered() {
+  const out = []; let d = startOfDay(new Date());
+  for (let i = 0; i < 400 && out.length < 15; i++, d = addDays(d, 1)) { const k = keyOf(d); eventsOn(k, true).forEach(e => { if (out.length < 15 && (e.holiday || !isRecur(e) ? (keyOf(new Date(e.start_at)) === k || e.holiday) : true)) out.push([k, e]); }); }
+  if (!out.length) return `<div class="block"><h2>Próximos</h2><div class="empty">No hay nada próximo de estas categorías.</div></div>`;
+  return `<div class="block" style="margin-top:22px"><h2>Próximos</h2><div class="list">${out.map(([k, e]) => eventRow(e, k).replace(/<span class="time">([^<]*)<\/span>/, (m, l) => `<span class="time up-date"><b>${esc(fmt(fromKey(k), { day: "numeric", month: "short" }))}</b>${l === "Todo el día" ? "" : l}</span>`)).join("")}</div></div>`;
+}
+ACT.calFilter = (el, d) => {
+  if (!d.v) S.ui.calFilter = [];
+  else S.ui.calFilter = S.ui.calFilter.includes(d.v) ? S.ui.calFilter.filter(x => x !== d.v) : [...S.ui.calFilter, d.v];
+  render();
+};
+ACT.holidayInfo = (el, d) => toast(`${d.t}: festivo${profile()?.holiday_region === "cataluna" ? "" : " nacional"}`);
+ACT.manageCats = () => {
+  const p = profile();
+  openSheet(`${sheetHead("Categorías")}
+    <div class="list">${catsSorted().map(c => `<button class="row" data-cat="${c.id}"><span class="bar" style="background:${colorVar(c.color)}"></span>
+      <span class="body"><span class="title">${esc(c.name)}</span><span class="meta">${plural(S.d.events.filter(e => e.category_id === c.id).length, "evento", "eventos")}</span></span></button>`).join("")}</div>
+    <button class="btn soft" id="catNew" style="margin-top:12px">Nueva categoría</button>
+    <div class="form-sec" style="margin-top:20px">Festivos</div>
+    <div class="switch"><label for="holOn">Mostrar los festivos nacionales</label><input type="checkbox" id="holOn" ${p?.show_holidays === false ? "" : "checked"}></div>
+    <div class="switch"><label for="holCat">Añadir también los de Cataluña</label><input type="checkbox" id="holCat" ${p?.holiday_region === "cataluna" ? "checked" : ""}></div>
+    <p class="hint">Los festivos se añaden solos cada año. Los locales de tu ciudad puedes apuntarlos como evento con la categoría Festivo.</p>`, root => {
+    $$("[data-cat]", root).forEach(b => b.addEventListener("click", () => openCategory(byId("event_categories", b.dataset.cat))));
+    $("#catNew", root).addEventListener("click", () => openCategory(null));
+    const saveHol = async () => { try { await saveProfile({ show_holidays: $("#holOn", root).checked, holiday_region: $("#holCat", root).checked ? "cataluna" : null }); render(); } catch (x) { toast(errMsg(x), true); } };
+    $("#holOn", root).addEventListener("change", saveHol); $("#holCat", root).addEventListener("change", saveHol);
+  });
+};
+function openCategory(c) {
+  let color = c?.color || COLORS[S.d.event_categories.length % COLORS.length];
+  formSheet(c ? "Editar categoría" : "Nueva categoría", `${field("Nombre", inp("ctN", c?.name, 'maxlength="40" placeholder="Por ejemplo: Médico"'), "ctN")}${field("Color", colorChips(color))}`, {
+    mount: root => { bindChips(root, x => color = x); if (!c) setTimeout(() => $("#ctN", root).focus(), 280); },
+    onSubmit: async root => {
+      const name = val(root, "ctN"); if (!name) return "Ponle un nombre.";
+      if (S.d.event_categories.some(x => x.id !== c?.id && x.name.toLowerCase() === name.toLowerCase())) return "Ya tienes una categoría con ese nombre.";
+      await save("event_categories", { name, color, position: c?.position ?? S.d.event_categories.length }, c?.id); toast("Categoría guardada");
+    },
+    onDelete: c ? async () => { await remove("event_categories", c.id); S.d.events.forEach(e => { if (e.category_id === c.id) e.category_id = null; }); S.ui.calFilter = S.ui.calFilter.filter(x => x !== c.id); saveCache(); } : null,
+    deleteLabel: "Eliminar categoría (los eventos se quedan sin categoría)"
+  });
+}
 ACT.newEvent = () => openEvent(null, S.route.mod === "calendario" ? S.ui.calSel : todayKey());
 ACT.editEvent = (el, d) => openEvent(d.id);
 
@@ -119,9 +211,13 @@ function openEvent(id, dayKey) {
     s = new Date(base.getFullYear(), base.getMonth(), base.getDate(), Math.min(now.getHours() + 1, 23), 0);
     en = new Date(s.getTime() + 3600e3);
   }
-  let color = e?.color || "verde";
+  let color = e?.color || "verde", catId = e?.category_id || (S.ui.calFilter.length === 1 && S.ui.calFilter[0] !== "none" ? S.ui.calFilter[0] : "");
+  if (!e && catId) color = byId("event_categories", catId)?.color || color;
   formSheet(e ? "Editar evento" : "Nuevo evento", `
     ${field("Título", inp("evTitle", e?.title, 'maxlength="200"'), "evTitle")}
+    <div class="field"><span class="lbl">Categoría</span><div class="cat-pills">
+      <button type="button" data-ec="" aria-pressed="${!catId}">Ninguna</button>
+      ${catsSorted().map(c => `<button type="button" data-ec="${c.id}" aria-pressed="${c.id === catId}"><i style="background:${colorVar(c.color)}"></i>${esc(c.name)}</button>`).join("")}</div></div>
     <div class="switch"><label for="evAll">Todo el día</label><input type="checkbox" id="evAll" ${e?.all_day ? "checked" : ""}></div>
     <div class="field"><span class="lbl">Empieza</span><div class="two">
       <input class="input" type="date" id="evSD" value="${keyOf(s)}" aria-label="Fecha de inicio">
@@ -140,6 +236,11 @@ function openEvent(id, dayKey) {
     mount: root => {
       bindChips(root, c => color = c);
       const all = $("#evAll", root), rec = $("#evRec", root);
+      bindSeg(root, "[data-ec]", b => {
+        catId = b.dataset.ec; const c = catId ? byId("event_categories", catId) : null;
+        if (c) { color = c.color; $$("[data-chips] .chip", root).forEach(x => x.setAttribute("aria-pressed", x.dataset.color === color)); }
+        if (!e && c && c.name.toLowerCase() === "cumpleaños") { all.checked = true; rec.value = "yearly"; sync(); }
+      });
       const sync = () => {
         $$(".t", root).forEach(x => x.classList.toggle("hidden", all.checked));
         $("#evUntil", root).classList.toggle("hidden", rec.value === "none"); $("#evUntilHint", root).classList.toggle("hidden", rec.value === "none");
@@ -158,7 +259,7 @@ function openEvent(id, dayKey) {
       if (end < start) return "El final no puede ser anterior al inicio.";
       const recur = val(root, "evRec");
       const saved = await save("events", {
-        title, all_day: allDay, start_at: start.toISOString(), end_at: end.toISOString(), color,
+        title, all_day: allDay, start_at: start.toISOString(), end_at: end.toISOString(), color, category_id: catId || null,
         recur, recur_until: recur === "none" ? null : (val(root, "evUntil") || null),
         location: val(root, "evLoc") || null, notes: val(root, "evNotes") || null
       }, e?.id);
