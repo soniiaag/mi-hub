@@ -5,6 +5,6 @@
 //  y las reglas de seguridad del script schema.sql.
 // =====================================================================
 window.HUB_CONFIG = {
-  SUPABASE_URL: "PEGA_AQUI_TU_PROJECT_URL",        // p. ej. https://abcdxyz.supabase.co
-  SUPABASE_ANON_KEY: "PEGA_AQUI_TU_ANON_PUBLIC_KEY"
+  SUPABASE_URL: "https://otmkmtvsjsglpvfbgmjo.supabase.co/rest/v1/",        // p. ej. https://abcdxyz.supabase.co
+  SUPABASE_ANON_KEY: "sb_publishable_rtClhFkAeUDVZMI6zcxe-Q_TyGEG4GB"
 };
