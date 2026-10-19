@@ -67,6 +67,38 @@ function totalsOf(items) {
 }
 const entriesOn = k => S.d.meal_entries.filter(e => e.date === k).sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at));
 const templateOf = wd => S.d.diet_template.filter(e => e.weekday === wd).sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at));
+/* Cada día sigue tu semana tipo hasta que lo cambias o marcas algo: entonces se guarda como día propio */
+const dayStarted = k => S.d.diet_days.some(d => d.date === k) || S.d.meal_entries.some(e => e.date === k);
+function dayItems(k) {
+  if (dayStarted(k)) return entriesOn(k);
+  return templateOf(wd1(fromKey(k))).map(t => ({ ...t, id: "tpl-" + t.id, tplId: t.id, date: k, eaten: false, virtual: true }));
+}
+async function materialize(k) {
+  if (dayStarted(k)) return {};
+  const tpl = templateOf(wd1(fromKey(k)));
+  if (!S.d.diet_days.some(d => d.date === k)) await save("diet_days", { date: k });
+  const made = await insertMany("meal_entries", tpl.map(t => ({ date: k, slot: t.slot, food_id: t.food_id, grams: t.grams, position: t.position, eaten: false })));
+  const map = {}; tpl.forEach((t, i) => map["tpl-" + t.id] = made[i]?.id); return map;
+}
+async function realId(k, id) { if (!String(id).startsWith("tpl-")) return id; const map = await materialize(k); return map[id]; }
+const eatenTotals = items => totalsOf(items.filter(i => i.eaten));
+
+/* ---------- Suplementos ---------- */
+const TIMINGS = [["ayunas", "En ayunas"], ["desayuno", "Con el desayuno"], ["comida", "Con la comida"], ["merienda", "Con la merienda"], ["cena", "Con la cena"],
+  ["pre", "Antes de entrenar"], ["post", "Después de entrenar"], ["dormir", "Antes de dormir"]];
+const timingName = t => (TIMINGS.find(x => x[0] === t) || [0, t])[1];
+const isTrainingDay = k => schedOf(wd1(fromKey(k))).some(p => p.kind === "gym" || p.kind === "pilates");
+function suppsFor(k) {
+  const wd = wd1(fromKey(k));
+  return S.d.supplements.filter(x => x.active !== false && (x.weekdays || [1, 2, 3, 4, 5, 6, 7]).includes(wd) && (!x.training_only || isTrainingDay(k)))
+    .sort((a, b) => TIMINGS.findIndex(t => t[0] === a.timing) - TIMINGS.findIndex(t => t[0] === b.timing) || a.position - b.position);
+}
+const suppTaken = (k, id) => S.d.supplement_logs.find(l => l.date === k && l.supplement_id === id);
+function suppRow(x, k) {
+  const done = !!suppTaken(k, x.id);
+  return `<div class="chk-row supp ${done ? "done" : ""}"><button class="check" data-act="suppCheck" data-id="${x.id}" data-date="${k}" aria-label="${done ? "Desmarcar" : "Marcar como tomado"}: ${esc(x.name)}">${ICON_CHECK}</button>
+    <span class="cr-body"><span class="fr-n">💊 ${esc(x.name)}</span><span class="fr-q">${esc([x.dose, timingName(x.timing).toLowerCase()].filter(Boolean).join(", "))}</span></span></div>`;
+}
 const foodsSorted = () => S.d.foods.filter(f => !f.archived).sort((a, b) => (b.favorite - a.favorite) || a.name.localeCompare(b.name, "es"));
 const qtyLabel = (fd, g) => fd?.unit_g ? `${fmtNum(g, 0)} g (${fmtNum(g / fd.unit_g, 1)} ${fd.unit_label || "u."})` : `${fmtNum(g, 0)} g`;
 
@@ -105,50 +137,71 @@ function dietTargets(dateKey) {
 S.ui.dietWeek = keyOf(weekStart(new Date()));
 S.ui.tplDay = wd1(new Date());
 S.ui.shopRange = wd1(new Date()) === 7 ? "proxima" : "semana";
-const DIET_TABS = [["hoy", "Hoy"], ["semana", "Semana"], ["plantilla", "Mi semana tipo"], ["compra", "Compra"], ["objetivos", "Objetivos"], ["alimentos", "Alimentos"]];
-
+S.ui.planTab = "comidas"; S.ui.moreTab = "objetivos";
 MOD.dieta = {
+  tabs: [["hoy", "Hoy", "hoy"], ["semana", "Semana", "semana"], ["plan", "Plan", "plan"], ["compra", "Compra", "compra"], ["mas", "Más", "mas"]],
+  tabOf: r => ({ dia: "semana", plantilla: "plan", objetivos: "mas", alimentos: "mas" }[r.sub] || r.sub || "hoy"),
   render(r) {
     const sub = r.sub || "hoy";
     if (sub === "dia") return modHead(cap(fmt(fromKey(r.id), { weekday: "long", day: "numeric", month: "long" })), ["dieta", "semana", "Semana"]) + viewDay(r.id);
-    const body = { hoy: () => viewDay(todayKey()), semana: viewDietWeek, plantilla: viewTemplate, compra: viewShopping, objetivos: viewTargets, alimentos: viewFoods }[sub] || (() => viewDay(todayKey()));
-    return modHead("Dieta") + subnav("dieta", DIET_TABS, sub) + body();
+    if (sub === "semana") return modHead("Semana") + viewDietWeek();
+    if (sub === "compra") return modHead("Lista de la compra") + viewShopping();
+    if (sub === "plan" || sub === "plantilla") return modHead("Mi plan") + `<div class="seg-scroll"><button data-act="planTab" data-v="comidas" aria-pressed="${S.ui.planTab === "comidas"}">Semana tipo</button><button data-act="planTab" data-v="supl" aria-pressed="${S.ui.planTab === "supl"}">Suplementos</button></div>` + (S.ui.planTab === "supl" ? viewSupplements() : viewTemplate());
+    if (sub === "mas" || sub === "objetivos" || sub === "alimentos") {
+      if (sub !== "mas") S.ui.moreTab = sub;
+      return modHead(S.ui.moreTab === "alimentos" ? "Alimentos" : "Objetivos") + `<div class="seg-scroll"><button data-act="moreTab" data-v="objetivos" aria-pressed="${S.ui.moreTab === "objetivos"}">Objetivos</button><button data-act="moreTab" data-v="alimentos" aria-pressed="${S.ui.moreTab === "alimentos"}">Alimentos</button></div>` + (S.ui.moreTab === "alimentos" ? viewFoods() : viewTargets());
+    }
+    return modHead("Dieta") + viewDay(todayKey());
   },
   fab(r) {
     const sub = r.sub || "hoy";
-    if (sub === "alimentos") return { label: "Nuevo alimento", fn: () => openFood(null) };
-    if (sub === "hoy" || sub === "dia") return { label: "Añadir comida", fn: () => addFoodFlow("meal_entries", { date: r.id || todayKey(), slot: guessSlot() }) };
+    if ((sub === "mas" || sub === "alimentos") && S.ui.moreTab === "alimentos") return { label: "Nuevo alimento", fn: () => openFood(null) };
+    if ((sub === "plan" || sub === "plantilla") && S.ui.planTab === "supl") return { label: "Nuevo suplemento", fn: () => openSupplement(null) };
+    if (sub === "hoy" || sub === "dia") return { label: "Añadir comida", fn: () => ACT.addMeal(null, { table: "meal_entries", date: r.id || todayKey(), slot: guessSlot() }) };
     return null;
   }
 };
+ACT.planTab = (el, d) => { S.ui.planTab = d.v; render(); };
+ACT.moreTab = (el, d) => { S.ui.moreTab = d.v; render(); };
 function guessSlot() { const h = new Date().getHours(); return h < 11 ? "desayuno" : h < 16 ? "comida" : h < 20 ? "merienda" : "cena"; }
 
-function macroBars(t, tg) {
+function macroBars(t, tg, planned) {
   const rows = [["Calorías", t.kcal, tg?.kcal, "kcal"], ["Proteína", t.p, tg?.p, "g"], ["Hidratos", t.c, tg?.c, "g"], ["Grasa", t.f, tg?.f, "g"], ["Fibra", t.fib, tg?.fib, "g"], ["Fruta y verdura", t.veg, tg?.veg, "g"]];
   return `<div class="macros">${rows.map(([l, v, g, u]) => {
     const pct = g ? v / g * 100 : 0, over = g && pct > 110;
     return `<div class="macro"><div class="mc-top"><span>${l}</span><b>${fmtNum(v, 0)}${g ? ` <small>/ ${fmtNum(g, 0)} ${u}</small>` : ` <small>${u}</small>`}</b></div>
       ${g ? bar(pct, over && l === "Calorías" ? "var(--c-ambar)" : l === "Calorías" ? "var(--ink)" : "var(--primary)") : ""}</div>`;
-  }).join("")}</div>`;
+  }).join("")}${planned ? `<div class="mc-plan">Has marcado ${fmtNum(t.kcal, 0)} de ${fmtNum(planned.kcal, 0)} kcal planificadas para hoy.</div>` : ""}</div>`;
 }
 
 function viewDay(k) {
-  const items = entriesOn(k), t = totalsOf(items), tg = dietTargets(k);
-  const isToday = k === todayKey(), tpl = templateOf(wd1(fromKey(k)));
-  let h = isToday ? `<div class="day-nav"><button class="icon-btn" data-go="dieta/dia/${keyOf(addDays(fromKey(k), -1))}" aria-label="Día anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg></button>
-    <b>Hoy</b><button class="icon-btn" data-go="dieta/dia/${keyOf(addDays(fromKey(k), 1))}" aria-label="Día siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button></div>`
-    : `<div class="day-nav"><button class="icon-btn" data-go="dieta/dia/${keyOf(addDays(fromKey(k), -1))}" aria-label="Día anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg></button>
-    <button class="pill-btn" data-go="dieta/hoy">Ir a hoy</button><button class="icon-btn" data-go="dieta/dia/${keyOf(addDays(fromKey(k), 1))}" aria-label="Día siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button></div>`;
-  if (tg.missing?.length) h += `<div class="callout soft-call"><div><b>Calcula tus objetivos</b><span>Completa tu perfil${tg.missing.includes("peso") ? " y apunta tu peso en Salud" : ""} para ver cuánto te conviene comer.</span></div><button class="btn-sm primary" data-go="dieta/objetivos">Ver</button></div>`;
+  const items = dayItems(k), t = eatenTotals(items), plan = totalsOf(items), tg = dietTargets(k), sups = suppsFor(k);
+  const isToday = k === todayKey(), virtual = !dayStarted(k);
+  const nav = (lbl) => `<div class="day-nav"><button class="icon-btn" data-go="dieta/dia/${keyOf(addDays(fromKey(k), -1))}" aria-label="Día anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+    ${lbl}<button class="icon-btn" data-go="dieta/dia/${keyOf(addDays(fromKey(k), 1))}" aria-label="Día siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button></div>`;
+  let h = nav(isToday ? "<b>Hoy</b>" : `<button class="pill-btn" data-go="dieta/hoy">Ir a hoy</button>`);
+  if (tg.missing?.length) h += `<div class="callout soft-call"><div><b>Calcula tus objetivos</b><span>Completa tu perfil${tg.missing.includes("peso") ? " y apunta tu peso en Salud" : ""} para ver cuánto te conviene comer.</span></div><button class="btn-sm primary" data-go="dieta/mas">Ver</button></div>`;
   else if (tg.extra > 0) h += `<p class="hint" style="margin:0 0 10px">Hoy tienes entreno en el plan: el objetivo incluye unas ${fmtNum(tg.extra * tg.goal[3], 0)} kcal extra.</p>`;
-  h += macroBars(t, tg.missing?.length ? null : tg);
-  if (!items.length && tpl.length) h += `<div class="callout"><div><b>Día vacío</b><span>Puedes rellenarlo con tu semana tipo del ${esc(DIAS[wd1(fromKey(k)) - 1].toLowerCase())}.</span></div><button class="btn-sm primary" data-act="fillFromTpl" data-from="${k}" data-to="${k}">Rellenar</button></div>`;
+  h += macroBars(t, tg.missing?.length ? null : tg, items.length ? plan : null);
+  if (!items.length && !S.d.diet_template.length) h += `<div class="callout soft-call"><div><b>Configura tu semana tipo</b><span>Apunta lo que sueles comer y cada día te aparecerá como una lista para ir marcando.</span></div><button class="btn-sm primary" data-go="dieta/plan">Configurar</button></div>`;
+  const extraSups = sups.filter(x => !["desayuno", "comida", "merienda", "cena"].includes(x.timing));
+  if (extraSups.length) h += `<div class="meal"><div class="meal-h"><b>Suplementos</b><span>${extraSups.filter(x => suppTaken(k, x.id)).length} de ${extraSups.length}</span></div>${extraSups.map(x => suppRow(x, k)).join("")}</div>`;
   h += SLOTS.map(([s, l]) => {
-    const its = items.filter(i => i.slot === s), st = totalsOf(its);
+    const its = items.filter(i => i.slot === s), sp = sups.filter(x => x.timing === s);
     if (s === "snacks" && !its.length) return `<div class="meal-links"><button class="link-btn" data-act="addMeal" data-table="meal_entries" data-date="${k}" data-slot="snacks">Añadir un snack</button></div>`;
-    return mealSlot(l, its, st, `data-act="addMeal" data-table="meal_entries" data-date="${k}" data-slot="${s}"`, "editMealItem", "meal_entries");
+    const st = totalsOf(its), done = its.filter(i => i.eaten).length;
+    return `<div class="meal"><div class="meal-h"><b>${esc(l)}</b><span>${its.length ? `${done}/${its.length}, ${fmtNum(st.kcal, 0)} kcal, ${fmtNum(st.p, 0)} g prot.` : ""}</span></div>
+      ${its.map(i => { const fd = byId("foods", i.food_id); if (!fd) return ""; const n = nutr(fd, i.grams);
+        return `<div class="chk-row ${i.eaten ? "done" : ""}"><button class="check" data-act="mealCheck" data-id="${i.id}" data-date="${k}" aria-label="${i.eaten ? "Desmarcar" : "Marcar como comido"}: ${esc(fd.name)}">${ICON_CHECK}</button>
+          <button class="cr-body" data-act="editMealItem" data-table="meal_entries" data-id="${i.id}" data-date="${k}"><span class="fr-n">${esc(fd.name)}</span><span class="fr-q">${esc(qtyLabel(fd, i.grams))}</span></button>
+          <span class="fr-k">${fmtNum(n.kcal, 0)} kcal</span></div>`; }).join("")}
+      ${sp.map(x => suppRow(x, k)).join("")}
+      ${its.length > 1 && done < its.length ? `<button class="link-btn" data-act="mealCheckAll" data-date="${k}" data-slot="${s}">Marcar todo como comido</button>` : ""}
+      <button class="add-food" data-act="addMeal" data-table="meal_entries" data-date="${k}" data-slot="${s}">Añadir</button></div>`;
   }).join("");
-  if (items.length) h += `<div class="meal-links"><button class="link-btn" data-act="copyDay" data-date="${k}">Copiar este día a otros días</button></div>`;
+  h += `<div class="meal-links">${items.length ? `<button class="link-btn" data-act="copyDay" data-date="${k}">Copiar este día a otros días</button>` : ""}
+    ${!virtual && templateOf(wd1(fromKey(k))).length ? `<button class="link-btn muted" data-act="resetDay" data-date="${k}">Volver a mi semana tipo en este día</button>` : ""}</div>`;
+  if (virtual && items.length) h += `<p class="hint">Este día sigue tu semana tipo. Si cambias algo, solo se cambia para este día.</p>`;
   return h;
 }
 function mealSlot(label, its, st, addAttrs, editAct, table) {
@@ -158,29 +211,27 @@ function mealSlot(label, its, st, addAttrs, editAct, table) {
         <span class="fr-q">${esc(qtyLabel(fd, i.grams))}</span><span class="fr-k">${fmtNum(n.kcal, 0)} kcal</span></button>`; }).join("")}
     <button class="add-food" ${addAttrs}>Añadir</button></div>`;
 }
-
 function viewDietWeek() {
   const ws = fromKey(S.ui.dietWeek), we = addDays(ws, 6), t0 = todayKey();
   const label = `${fmt(ws, { day: "numeric", month: "short" })} al ${fmt(we, { day: "numeric", month: "short" })}`;
   let h = `<div class="month-nav"><button class="icon-btn" data-act="dietWeek" data-v="-7" aria-label="Semana anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg></button>
     <b>${esc(label)}</b><button class="icon-btn" data-act="dietWeek" data-v="7" aria-label="Semana siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button></div>`;
-  const hasTpl = S.d.diet_template.length > 0;
   h += `<div class="list">` + [0, 1, 2, 3, 4, 5, 6].map(i => {
-    const d = addDays(ws, i), k = keyOf(d), its = entriesOn(k), t = totalsOf(its), tg = dietTargets(k);
+    const d = addDays(ws, i), k = keyOf(d), its = dayItems(k), t = totalsOf(its), eaten = eatenTotals(its), tg = dietTargets(k);
     const names = [...new Set(its.map(x => byId("foods", x.food_id)?.name).filter(Boolean))].slice(0, 5).join(", ");
+    const past = k <= t0;
     return `<button class="row wk-row ${k === t0 ? "is-today" : ""}" data-go="dieta/dia/${k}">
       <span class="wk-d"><b>${esc(cap(fmt(d, { weekday: "short" })).replace(".", ""))}</b><span>${d.getDate()}</span></span>
-      <span class="body">${its.length ? `<span class="title">${fmtNum(t.kcal, 0)} kcal${tg.kcal ? ` <small>/ ${fmtNum(tg.kcal, 0)}</small>` : ""}, ${fmtNum(t.p, 0)} g proteína</span>
-        <span class="meta">${esc(names)}</span>${tg.kcal ? bar(t.kcal / tg.kcal * 100, "var(--primary)") : ""}` : `<span class="title muted">Sin comidas apuntadas</span>`}</span></button>`;
+      <span class="body">${its.length ? `<span class="title">${past ? `${fmtNum(eaten.kcal, 0)} de ` : ""}${fmtNum(t.kcal, 0)} kcal${tg.kcal ? ` <small>(objetivo ${fmtNum(tg.kcal, 0)})</small>` : ""}</span>
+        <span class="meta">${fmtNum(t.p, 0)} g proteína. ${esc(names)}</span>${past && t.kcal ? bar(eaten.kcal / t.kcal * 100, "var(--primary)") : ""}` : `<span class="title muted">Sin comidas planificadas</span>`}</span></button>`;
   }).join("") + `</div>`;
-  if (hasTpl) h += `<button class="btn soft" data-act="fillWeekTpl" style="margin-top:14px">Rellenar los días vacíos con mi semana tipo</button>`;
-  else h += `<p class="hint">Si siempre comes parecido, crea tu semana tipo y rellena semanas enteras con un toque.</p>`;
+  if (!S.d.diet_template.length) h += `<p class="hint">Crea tu semana tipo en Plan y todos los días te aparecerán ya rellenos.</p>`;
   return h;
 }
 
 function viewTemplate() {
   const wd = S.ui.tplDay, items = templateOf(wd);
-  let h = `<p class="lead">Lo que sueles comer cada día de la semana. Con esto rellenas días o semanas enteras y sacas la lista de la compra.</p>
+  let h = `<p class="lead">Lo que sueles comer cada día de la semana. Cada día te aparecerá como una lista para ir marcando, y con ella se hace la lista de la compra.</p>
     <div class="wd-chips">${DIAS.map((d, i) => `<button data-act="tplDay" data-v="${i + 1}" aria-pressed="${wd === i + 1}">${d.slice(0, 2)}${templateOf(i + 1).length ? "<i></i>" : ""}</button>`).join("")}</div>
     <h2 class="tpl-title">${DIAS[wd - 1]}</h2>`;
   h += macroBars(totalsOf(items), (() => { const tg = dietTargets(keyOf(addDays(weekStart(new Date()), wd - 1))); return tg.missing?.length ? null : tg; })());
@@ -200,8 +251,8 @@ function shoppingList() {
   const [a, b] = shopRange(), useTpl = S.ui.shopTpl !== false, agg = {};
   let daysTpl = 0;
   for (let d = new Date(a); d <= b; d = addDays(d, 1)) {
-    const k = keyOf(d); let its = entriesOn(k);
-    if (!its.length && useTpl) { its = templateOf(wd1(d)); if (its.length) daysTpl++; }
+    const k = keyOf(d); let its = dayStarted(k) ? entriesOn(k) : [];
+    if (!dayStarted(k) && useTpl) { its = templateOf(wd1(d)); if (its.length) daysTpl++; }
     its.forEach(i => agg[i.food_id] = (agg[i.food_id] || 0) + Number(i.grams));
   }
   return { items: Object.entries(agg).map(([id, g]) => ({ fd: byId("foods", id), g })).filter(x => x.fd), daysTpl };
@@ -218,8 +269,8 @@ function viewShopping() {
   S.ui.shopKey = ckKey;
   let h = `<div class="seg-scroll">${[["semana", "Esta semana"], ["proxima", "Próxima semana"], ["mes", "Este mes"], ["mesprox", "Mes que viene"]].map(([k, l]) =>
     `<button data-act="shopRange" data-v="${k}" aria-pressed="${S.ui.shopRange === k}">${l}</button>`).join("")}</div>
-    <p class="lead">${esc(label)}: del ${esc(fmt(a, { day: "numeric", month: "long" }))} al ${esc(fmt(b, { day: "numeric", month: "long" }))}.${daysTpl ? ` Incluye tu semana tipo en ${plural(daysTpl, "día sin comidas apuntadas", "días sin comidas apuntadas")}.` : ""}</p>
-    <div class="switch"><label for="shopTpl">Usar mi semana tipo en los días vacíos</label><input type="checkbox" id="shopTpl" data-ch="shopTpl" ${S.ui.shopTpl !== false ? "checked" : ""}></div>`;
+    <p class="lead">${esc(label)}: del ${esc(fmt(a, { day: "numeric", month: "long" }))} al ${esc(fmt(b, { day: "numeric", month: "long" }))}.${daysTpl ? ` ${plural(daysTpl, "día sigue", "días siguen")} tu semana tipo.` : ""}</p>
+    <div class="switch"><label for="shopTpl">Incluir los días que siguen tu semana tipo</label><input type="checkbox" id="shopTpl" data-ch="shopTpl" ${S.ui.shopTpl !== false ? "checked" : ""}></div>`;
   if (!items.length) return h + `<div class="empty">No hay comidas apuntadas en estas fechas. Apunta tus comidas o crea tu semana tipo.</div>`;
   FOOD_CATS.forEach(([c, cl]) => {
     const its = items.filter(x => x.fd.category === c).sort((p, q) => p.fd.name.localeCompare(q.fd.name, "es"));
@@ -308,7 +359,39 @@ ACT.editOverrides = () => {
 /* ---------- Añadir y editar alimentos en comidas o plantilla ---------- */
 ACT.addMeal = (el, d) => addFoodFlow(d.table, d.table === "meal_entries" ? { date: d.date, slot: d.slot } : { weekday: +d.wd, slot: d.slot });
 function addFoodFlow(table, base) { pickFood(fid => openGrams(table, null, { ...base, food_id: fid })); }
-ACT.editMealItem = (el, d) => { const it = byId(d.table, d.id); if (it) openGrams(d.table, it, it); };
+ACT.editMealItem = async (el, d) => {
+  let id = d.id;
+  if (d.table === "meal_entries" && String(id).startsWith("tpl-")) { try { id = await realId(d.date, id); render(); } catch (x) { return toast(errMsg(x), true); } }
+  const it = byId(d.table, id); if (it) openGrams(d.table, it, it);
+};
+ACT.mealCheck = async (el, d) => {
+  try {
+    const id = await realId(d.date, d.id), it = byId("meal_entries", id); if (!it) return;
+    it.eaten = !it.eaten; render();
+    await save("meal_entries", { eaten: it.eaten }, it.id);
+  } catch (x) { toast(errMsg(x), true); loadAll(); }
+};
+ACT.mealCheckAll = async (el, d) => {
+  try {
+    await materialize(d.date);
+    const its = entriesOn(d.date).filter(i => i.slot === d.slot && !i.eaten);
+    its.forEach(i => i.eaten = true); render();
+    await Promise.all(its.map(i => save("meal_entries", { eaten: true }, i.id)));
+  } catch (x) { toast(errMsg(x), true); loadAll(); }
+};
+ACT.resetDay = async (el, d) => {
+  if (!confirm("¿Volver a tu semana tipo en este día? Se quitarán los cambios y lo que hayas marcado.")) return;
+  try {
+    await removeIds("meal_entries", entriesOn(d.date).map(e => e.id));
+    await removeIds("diet_days", S.d.diet_days.filter(x => x.date === d.date).map(x => x.id));
+    render(); toast("Día restablecido");
+  } catch (x) { toast(errMsg(x), true); }
+};
+ACT.suppCheck = async (el, d) => {
+  const ex = suppTaken(d.date, d.id);
+  try { if (ex) await remove("supplement_logs", ex.id); else await save("supplement_logs", { date: d.date, supplement_id: d.id }); render(); }
+  catch (x) { toast(errMsg(x), true); }
+};
 
 function openGrams(table, item, base) {
   const fd = byId("foods", base.food_id); if (!fd) return;
@@ -329,6 +412,7 @@ function openGrams(table, item, base) {
       const g = num(val(root, "gG")); if (!g || g <= 0) return "Escribe la cantidad en gramos.";
       const slot = val(root, "gSlot");
       if (item) { await save(table, { grams: g, slot }, item.id); return; }
+      if (table === "meal_entries") await materialize(base.date);
       const sibl = table === "meal_entries" ? entriesOn(base.date) : templateOf(base.weekday);
       await save(table, { ...base, slot, grams: g, position: sibl.length });
       toast("Añadido");
@@ -408,7 +492,7 @@ ACT.fillWeekTpl = async () => {
   try { await insertMany("meal_entries", rows); render(); toast("Semana rellenada"); } catch (x) { toast(errMsg(x), true); }
 };
 ACT.copyDay = (el, d) => {
-  const src = entriesOn(d.date);
+  const src = dayItems(d.date);
   formSheet("Copiar este día", `${field("Desde", `<input type="date" class="input" id="cdA" value="${keyOf(addDays(fromKey(d.date), 1))}">`, "cdA")}
     ${field("Hasta", `<input type="date" class="input" id="cdB" value="${keyOf(addDays(fromKey(d.date), 1))}">`, "cdB")}
     <div class="switch"><label for="cdRep">Sustituir lo que ya haya apuntado esos días</label><input type="checkbox" id="cdRep"></div>`, {
@@ -416,15 +500,16 @@ ACT.copyDay = (el, d) => {
     onSubmit: async root => {
       const a = val(root, "cdA"), b = val(root, "cdB") || a; if (!a || b < a) return "Revisa las fechas.";
       if ((fromKey(b) - fromKey(a)) / 864e5 > 62) return "Copia como máximo dos meses de una vez.";
-      const rep = $("#cdRep", root).checked, rows = [], del = [];
+      const rep = $("#cdRep", root).checked, rows = [], del = [], days = [];
       for (let x = fromKey(a); x <= fromKey(b); x = addDays(x, 1)) {
         const k = keyOf(x); if (k === d.date) continue;
         const ex = entriesOn(k); if (ex.length && !rep) continue;
         del.push(...ex.map(e => e.id));
-        src.forEach(s => rows.push({ date: k, slot: s.slot, food_id: s.food_id, grams: s.grams, position: s.position }));
+        src.forEach(s => rows.push({ date: k, slot: s.slot, food_id: s.food_id, grams: s.grams, position: s.position, eaten: false }));
+        if (!S.d.diet_days.some(x => x.date === k)) days.push({ date: k });
       }
       if (!rows.length) return "Esos días ya tienen comidas. Marca la opción de sustituir si quieres reemplazarlas.";
-      await removeIds("meal_entries", del); await insertMany("meal_entries", rows); toast("Día copiado");
+      await removeIds("meal_entries", del); await insertMany("diet_days", days); await insertMany("meal_entries", rows); toast("Día copiado");
     }
   });
 };
@@ -450,6 +535,38 @@ ACT.copyTplDay = (el, d) => {
 
 /* Resumen para la página de inicio */
 function dietTodaySummary() {
-  const k = todayKey(), t = totalsOf(entriesOn(k)), tg = dietTargets(k);
-  return { t, tg: tg.missing?.length ? null : tg, has: entriesOn(k).length > 0 };
+  const k = todayKey(), items = dayItems(k), t = eatenTotals(items), tg = dietTargets(k), sups = suppsFor(k);
+  return { t, tg: tg.missing?.length ? null : tg, has: items.length > 0, suppPending: sups.filter(x => !suppTaken(k, x.id)).length };
+}
+
+/* ---------- Plan de suplementos ---------- */
+function viewSupplements() {
+  const list = [...S.d.supplements].sort((a, b) => TIMINGS.findIndex(t => t[0] === a.timing) - TIMINGS.findIndex(t => t[0] === b.timing) || a.position - b.position);
+  if (!list.length) return `<div class="empty">Añade tus suplementos (proteína, creatina, vitaminas…) con cuándo tomarlos. Te aparecerán cada día en la lista para marcarlos. <button data-act="newSupp">Añadir suplemento</button></div>`;
+  return `<div class="list">${list.map(x => `<button class="row ${x.active === false ? "off" : ""}" data-act="editSupp" data-id="${x.id}"><span class="ci">💊</span>
+    <span class="body"><span class="title">${esc(x.name)}${x.dose ? ` <small class="muted">${esc(x.dose)}</small>` : ""}</span>
+    <span class="meta">${esc([timingName(x.timing), (x.weekdays || []).length === 7 || !x.weekdays ? "todos los días" : (x.weekdays || []).map(w => DIAS[w - 1].slice(0, 3).toLowerCase()).join(", "), x.training_only ? "solo días de entreno" : "", x.active === false ? "en pausa" : ""].filter(Boolean).join(", "))}</span></span></button>`).join("")}</div>`;
+}
+ACT.newSupp = () => openSupplement(null);
+ACT.editSupp = (el, d) => openSupplement(byId("supplements", d.id));
+function openSupplement(x) {
+  const wds = x?.weekdays || [1, 2, 3, 4, 5, 6, 7];
+  formSheet(x ? "Editar suplemento" : "Nuevo suplemento", `
+    ${field("Nombre", inp("spN", x?.name, 'placeholder="Por ejemplo: Creatina" maxlength="60"'), "spN")}
+    ${field("Dosis", inp("spD", x?.dose, 'placeholder="Por ejemplo: 5 g, 1 cápsula" maxlength="40"'), "spD")}
+    ${field("Cuándo", sel("spT", TIMINGS, x?.timing || "desayuno"), "spT")}
+    <div class="field"><span class="lbl">Qué días</span><div class="wd-chips multi">${DIAS.map((d, i) => `<button type="button" data-sw="${i + 1}" aria-pressed="${wds.includes(i + 1)}">${d.slice(0, 2)}</button>`).join("")}</div></div>
+    <div class="switch"><label for="spTr">Solo los días de entreno</label><input type="checkbox" id="spTr" ${x?.training_only ? "checked" : ""}></div>
+    <div class="switch"><label for="spOn">Activo</label><input type="checkbox" id="spOn" ${x?.active === false ? "" : "checked"}></div>
+    ${field("Notas", area("spNo", x?.notes), "spNo")}`, {
+    mount: root => $$("[data-sw]", root).forEach(b => b.addEventListener("click", () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true"))),
+    onSubmit: async root => {
+      const name = val(root, "spN"); if (!name) return "Ponle un nombre.";
+      const weekdays = $$("[data-sw]", root).filter(b => b.getAttribute("aria-pressed") === "true").map(b => +b.dataset.sw);
+      if (!weekdays.length) return "Elige al menos un día.";
+      await save("supplements", { name, dose: val(root, "spD") || null, timing: val(root, "spT"), weekdays, training_only: $("#spTr", root).checked, active: $("#spOn", root).checked, notes: val(root, "spNo") || null, position: x?.position ?? S.d.supplements.length }, x?.id);
+      toast("Suplemento guardado");
+    },
+    onDelete: x ? () => remove("supplements", x.id) : null
+  });
 }

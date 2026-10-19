@@ -109,7 +109,9 @@ function taskRow(t) {
 
 /* ---------- Calendario ---------- */
 MOD.calendario = {
-  render() {
+  tabs: [["mes", "Mes", "mes"], ["agenda", "Agenda", "agenda"]],
+  render(r) {
+    if (r.sub === "agenda") return modHead("Agenda", ["inicio"], `<button class="btn-sm" data-act="manageCats">Categorías</button>`) + calFilterBar() + viewAgenda();
     const m = S.ui.calMonth, first = new Date(m.getFullYear(), m.getMonth(), 1);
     const start = addDays(first, -((first.getDay() + 6) % 7)), t0 = todayKey();
     let cells = "";
@@ -132,11 +134,7 @@ MOD.calendario = {
         <button class="icon-btn" data-act="calNav" data-v="1" aria-label="Mes siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button>
       </div>
     </div>
-    <div class="mfilter cal-filter">
-      <button data-act="calFilter" data-v="" aria-pressed="${!f.length}">Todas</button>
-      ${catsSorted().map(c => `<button data-act="calFilter" data-v="${c.id}" aria-pressed="${f.includes(c.id)}"><i style="background:${colorVar(c.color)}"></i>${esc(c.name)}</button>`).join("")}
-      <button data-act="calFilter" data-v="none" aria-pressed="${f.includes("none")}">Sin categoría</button>
-    </div>
+    ${calFilterBar()}
     <div class="dow">${["L", "M", "X", "J", "V", "S", "D"].map(x => `<div>${x}</div>`).join("")}</div>
     <div class="grid">${cells}</div>
     <div class="sel-day">
@@ -158,6 +156,24 @@ ACT.calNav = (el, d) => {
   else S.ui.calMonth = new Date(S.ui.calMonth.getFullYear(), S.ui.calMonth.getMonth() + Number(d.v), 1);
   render();
 };
+function calFilterBar() {
+  const f = S.ui.calFilter;
+  return `<div class="mfilter cal-filter">
+      <button data-act="calFilter" data-v="" aria-pressed="${!f.length}">Todas</button>
+      ${catsSorted().map(c => `<button data-act="calFilter" data-v="${c.id}" aria-pressed="${f.includes(c.id)}"><i style="background:${colorVar(c.color)}"></i>${esc(c.name)}</button>`).join("")}
+      <button data-act="calFilter" data-v="none" aria-pressed="${f.includes("none")}">Sin categoría</button>
+    </div>`;
+}
+function viewAgenda() {
+  let h = "", d = startOfDay(new Date()), shown = 0;
+  for (let i = 0; i < 60; i++, d = addDays(d, 1)) {
+    const k = keyOf(d), evs = eventsOn(k, true).filter(e => i === 0 || e.holiday || isRecur(e) || keyOf(new Date(e.start_at)) === k);
+    if (!evs.length) continue;
+    shown++;
+    h += `<div class="group-h">${esc(cap(niceDate(k)))}${i > 1 ? `, ${esc(fmt(d, { weekday: "long" }))}` : ""}</div><div class="list">${evs.map(e => eventRow(e, k)).join("")}</div>`;
+  }
+  return shown ? `<p class="lead">Los próximos 60 días.</p>` + h : `<div class="empty">No tienes nada en los próximos 60 días.</div>`;
+}
 function upcomingFiltered() {
   const out = []; let d = startOfDay(new Date());
   for (let i = 0; i < 400 && out.length < 15; i++, d = addDays(d, 1)) { const k = keyOf(d); eventsOn(k, true).forEach(e => { if (out.length < 15 && (e.holiday || !isRecur(e) ? (keyOf(new Date(e.start_at)) === k || e.holiday) : true)) out.push([k, e]); }); }
@@ -273,7 +289,9 @@ function openEvent(id, dayKey) {
 
 /* ---------- Tareas ---------- */
 MOD.tareas = {
-  render() {
+  tabs: [["pendientes", "Pendientes", "lista"], ["hechas", "Hechas", "hecho"]],
+  render(r) {
+    S.ui.taskFilter = r.sub === "hechas" ? "hechas" : "pendientes";
     const isDone = S.ui.taskFilter === "hechas", t0 = todayKey();
     let body;
     if (isDone) {
@@ -290,11 +308,7 @@ MOD.tareas = {
       body = groups.length ? groups.map(([h, l, c]) => `<div class="group-h ${c}">${h}</div><div class="list">${l.map(taskRow).join("")}</div>`).join("")
         : `<div class="empty">Todo al día. <button data-act="newTask">Añadir una tarea</button></div>`;
     }
-    return modHead("Tareas") + `
-    <div class="seg" role="group" aria-label="Filtro">
-      <button data-act="taskFilter" data-v="pendientes" aria-pressed="${!isDone}">Pendientes</button>
-      <button data-act="taskFilter" data-v="hechas" aria-pressed="${isDone}">Hechas</button>
-    </div>${body}`;
+    return modHead(isDone ? "Tareas hechas" : "Tareas") + body;
   },
   fab: () => ({ label: "Añadir tarea", fn: () => openTask(null, "") })
 };

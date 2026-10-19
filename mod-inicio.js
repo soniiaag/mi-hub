@@ -58,14 +58,15 @@ MOD.inicio = {
     ${(() => { const ds = dietTodaySummary(); if (!ds.tg && !ds.has) return "";
       return `<button class="diet-strip" data-go="dieta"><span class="ds-l">Dieta de hoy</span>
         <span class="ds-row"><span>Calorías</span><b>${fmtNum(ds.t.kcal, 0)}${ds.tg ? ` / ${fmtNum(ds.tg.kcal, 0)}` : ""}</b></span>${ds.tg ? bar(ds.t.kcal / ds.tg.kcal * 100, "var(--ink)") : ""}
-        <span class="ds-row"><span>Proteína</span><b>${fmtNum(ds.t.p, 0)}${ds.tg ? ` / ${fmtNum(ds.tg.p, 0)} g` : " g"}</b></span>${ds.tg ? bar(ds.t.p / ds.tg.p * 100) : ""}</button>`; })()}
+        <span class="ds-row"><span>Proteína</span><b>${fmtNum(ds.t.p, 0)}${ds.tg ? ` / ${fmtNum(ds.tg.p, 0)} g` : " g"}</b></span>${ds.tg ? bar(ds.t.p / ds.tg.p * 100) : ""}
+        ${ds.suppPending ? `<span class="ds-sup">💊 ${plural(ds.suppPending, "suplemento por tomar", "suplementos por tomar")}</span>` : ""}</button>`; })()}
     ${evs.length ? `<div class="block"><h2>Agenda de hoy <button data-act="newEvent">Añadir</button></h2><div class="list">${evs.map(e => eventRow(e, k)).join("")}</div></div>` : ""}
     ${tToday.length ? `<div class="block"><h2>Tareas para hoy <button data-act="newTask">Añadir</button></h2><div class="list">${tToday.map(taskRow).join("")}</div></div>` : ""}
 
     <div class="block"><h2>Módulos</h2>
       <div class="mods">
         ${modTile("calendario", "Calendario")}${modTile("tareas", "Tareas")}${modTile("entreno", "Entreno")}${modTile("finanzas", "Finanzas")}
-        ${modTile("dieta", "Dieta")}${modTile("salud", "Salud")}${modTile("datos", "Datos personales")}${modTile("ajustes", "Ajustes")}
+        ${modTile("dieta", "Dieta")}${modTile("salud", "Salud")}${modTile("datos", "Mis datos")}${modTile("ajustes", "Ajustes")}
       </div>
     </div>`;
   },
@@ -85,6 +86,9 @@ MOD.ajustes = {
     <div class="block"><h2>Tus datos</h2><div class="settings">
       <button class="item" data-act="export">Exportar copia de seguridad <small>JSON</small></button>
       <button class="item" data-act="sync">Sincronizar ahora</button>
+    </div></div>
+    <div class="block"><h2>Asistente</h2><div class="settings">
+      <button class="item" data-act="aiSettings">Asistente con IA <small>${aiKey() ? "Activado" : "Modo básico"}</small></button>
     </div></div>
     <div class="block"><h2>Cuenta</h2><div class="settings">
       <div class="item">Sesión iniciada <small>${esc(S.user?.email || "")}</small></div>

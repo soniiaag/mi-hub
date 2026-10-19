@@ -39,7 +39,7 @@ const mask = v => !v ? "" : v.length <= 4 ? "••••" : "•".repeat(Math.m
 MOD.datos = {
   render() {
     const alerts = expiringItems();
-    let h = modHead("Datos personales");
+    let h = modHead("Mis datos");
     if (alerts.length) h += `<div class="alert-box">${alerts.map(x => `<div><b>${esc(x.label)}</b>${expiryText(x)}</div>`).join("")}</div>`;
     const cats = [...new Set([...PRESETS.map(p => p.cat), ...S.d.personal_items.filter(x => !presetOf(x.kind)).map(x => x.category || "Otros")])];
     cats.forEach(c => {

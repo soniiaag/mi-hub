@@ -4,37 +4,104 @@
    ===================================================================== */
 const MUSCLES = ["Glúteo", "Cuádriceps", "Isquios", "Aductores", "Gemelos", "Pecho", "Espalda", "Hombro", "Bíceps", "Tríceps", "Core", "Cardio", "Otro"];
 const KIND_LABEL = { gym: "Gimnasio", pilates: "Pilates", otro: "Otra actividad" };
-const EX_LIBRARY = {
-  "Glúteo": ["Hip thrust", "Puente de glúteo", "Patada de glúteo en polea", "Abducción en máquina", "Sentadilla búlgara", "Step-up", "Hip thrust en máquina"],
-  "Cuádriceps": ["Sentadilla con barra", "Sentadilla goblet", "Prensa de piernas", "Extensión de cuádriceps", "Zancadas", "Hack squat"],
-  "Isquios": ["Peso muerto rumano", "Curl femoral tumbado", "Curl femoral sentado", "Buenos días"],
-  "Aductores": ["Aducción en máquina"],
-  "Gemelos": ["Elevación de talones de pie", "Elevación de talones sentada"],
-  "Pecho": ["Press banca", "Press inclinado con mancuernas", "Aperturas con mancuernas", "Cruce de poleas", "Flexiones"],
-  "Espalda": ["Jalón al pecho", "Remo con barra", "Remo con mancuerna", "Remo en polea baja", "Dominadas", "Dominadas asistidas", "Pullover en polea", "Peso muerto"],
-  "Hombro": ["Press militar", "Press de hombro con mancuernas", "Elevaciones laterales", "Elevaciones frontales", "Pájaros", "Face pull"],
-  "Bíceps": ["Curl con barra", "Curl con mancuernas", "Curl martillo", "Curl en polea", "Curl predicador"],
-  "Tríceps": ["Extensión en polea con cuerda", "Press francés", "Extensión por encima de la cabeza", "Fondos en banco", "Patada de tríceps"],
-  "Core": ["Plancha", "Crunch", "Elevación de piernas", "Rueda abdominal", "Pallof press"],
-  "Cardio": ["Cinta", "Bicicleta", "Elíptica", "Remo (máquina)", "Escaladora"]
+/* Biblioteca: [nombre, grupo, músculos principales, músculos secundarios] */
+const EX_LIB = [
+  ["Hip thrust", "Glúteo", ["Glúteo mayor"], ["Isquiotibiales", "Glúteo medio"]],
+  ["Hip thrust en máquina", "Glúteo", ["Glúteo mayor"], ["Isquiotibiales"]],
+  ["Puente de glúteo", "Glúteo", ["Glúteo mayor"], ["Isquiotibiales"]],
+  ["Patada de glúteo en polea", "Glúteo", ["Glúteo mayor"], ["Glúteo medio"]],
+  ["Abducción en máquina", "Glúteo", ["Glúteo medio", "Abductores"], ["Glúteo mayor"]],
+  ["Abducción en polea", "Glúteo", ["Glúteo medio"], ["Abductores"]],
+  ["Paseo lateral con banda", "Glúteo", ["Glúteo medio"], ["Abductores"]],
+  ["Sentadilla búlgara", "Glúteo", ["Cuádriceps", "Glúteo mayor"], ["Aductores", "Glúteo medio"]],
+  ["Step-up", "Glúteo", ["Cuádriceps", "Glúteo mayor"], ["Glúteo medio"]],
+  ["Hiperextensiones", "Glúteo", ["Erectores espinales", "Glúteo mayor"], ["Isquiotibiales"]],
+  ["Sentadilla con barra", "Cuádriceps", ["Cuádriceps", "Glúteo mayor"], ["Aductores", "Erectores espinales"]],
+  ["Sentadilla goblet", "Cuádriceps", ["Cuádriceps"], ["Glúteo mayor", "Aductores", "Recto abdominal"]],
+  ["Sentadilla sumo", "Cuádriceps", ["Aductores", "Glúteo mayor"], ["Cuádriceps"]],
+  ["Prensa de piernas", "Cuádriceps", ["Cuádriceps"], ["Glúteo mayor", "Aductores"]],
+  ["Extensión de cuádriceps", "Cuádriceps", ["Cuádriceps"], []],
+  ["Zancadas", "Cuádriceps", ["Cuádriceps", "Glúteo mayor"], ["Aductores", "Glúteo medio"]],
+  ["Hack squat", "Cuádriceps", ["Cuádriceps"], ["Glúteo mayor"]],
+  ["Peso muerto rumano", "Isquios", ["Isquiotibiales", "Glúteo mayor"], ["Erectores espinales", "Antebrazo"]],
+  ["Curl femoral tumbado", "Isquios", ["Isquiotibiales"], ["Gemelos"]],
+  ["Curl femoral sentado", "Isquios", ["Isquiotibiales"], []],
+  ["Buenos días", "Isquios", ["Isquiotibiales", "Erectores espinales"], ["Glúteo mayor"]],
+  ["Aducción en máquina", "Aductores", ["Aductores"], []],
+  ["Elevación de talones de pie", "Gemelos", ["Gemelos"], ["Sóleo"]],
+  ["Elevación de talones sentada", "Gemelos", ["Sóleo"], ["Gemelos"]],
+  ["Press banca", "Pecho", ["Pectoral mayor"], ["Deltoides anterior", "Tríceps"]],
+  ["Press inclinado con mancuernas", "Pecho", ["Pectoral superior"], ["Deltoides anterior", "Tríceps"]],
+  ["Aperturas con mancuernas", "Pecho", ["Pectoral mayor"], ["Deltoides anterior"]],
+  ["Cruce de poleas", "Pecho", ["Pectoral mayor"], ["Deltoides anterior"]],
+  ["Flexiones", "Pecho", ["Pectoral mayor"], ["Tríceps", "Deltoides anterior", "Recto abdominal"]],
+  ["Jalón al pecho", "Espalda", ["Dorsal ancho"], ["Bíceps", "Trapecio medio y romboides", "Deltoides posterior"]],
+  ["Remo con barra", "Espalda", ["Dorsal ancho", "Trapecio medio y romboides"], ["Deltoides posterior", "Bíceps", "Erectores espinales"]],
+  ["Remo con mancuerna", "Espalda", ["Dorsal ancho"], ["Trapecio medio y romboides", "Bíceps", "Deltoides posterior"]],
+  ["Remo en polea baja", "Espalda", ["Trapecio medio y romboides", "Dorsal ancho"], ["Bíceps", "Deltoides posterior"]],
+  ["Dominadas", "Espalda", ["Dorsal ancho"], ["Bíceps", "Braquial", "Trapecio medio y romboides"]],
+  ["Dominadas asistidas", "Espalda", ["Dorsal ancho"], ["Bíceps", "Braquial", "Trapecio medio y romboides"]],
+  ["Pullover en polea", "Espalda", ["Dorsal ancho"], ["Tríceps", "Pectoral mayor"]],
+  ["Peso muerto", "Espalda", ["Isquiotibiales", "Glúteo mayor", "Erectores espinales"], ["Cuádriceps", "Trapecio superior", "Antebrazo"]],
+  ["Encogimientos", "Espalda", ["Trapecio superior"], ["Antebrazo"]],
+  ["Press militar", "Hombro", ["Deltoides anterior"], ["Deltoides lateral", "Tríceps", "Trapecio superior"]],
+  ["Press de hombro con mancuernas", "Hombro", ["Deltoides anterior", "Deltoides lateral"], ["Tríceps"]],
+  ["Elevaciones laterales", "Hombro", ["Deltoides lateral"], ["Trapecio superior"]],
+  ["Elevaciones frontales", "Hombro", ["Deltoides anterior"], ["Pectoral superior"]],
+  ["Pájaros", "Hombro", ["Deltoides posterior"], ["Trapecio medio y romboides"]],
+  ["Face pull", "Hombro", ["Deltoides posterior", "Manguito rotador"], ["Trapecio medio y romboides"]],
+  ["Curl con barra", "Bíceps", ["Bíceps"], ["Braquial", "Antebrazo"]],
+  ["Curl con mancuernas", "Bíceps", ["Bíceps"], ["Braquial"]],
+  ["Curl martillo", "Bíceps", ["Braquial", "Braquiorradial"], ["Bíceps"]],
+  ["Curl en polea", "Bíceps", ["Bíceps"], ["Braquial"]],
+  ["Curl predicador", "Bíceps", ["Bíceps"], ["Braquial"]],
+  ["Extensión en polea con cuerda", "Tríceps", ["Tríceps"], []],
+  ["Press francés", "Tríceps", ["Tríceps"], []],
+  ["Extensión por encima de la cabeza", "Tríceps", ["Tríceps"], []],
+  ["Fondos en banco", "Tríceps", ["Tríceps"], ["Pectoral mayor", "Deltoides anterior"]],
+  ["Patada de tríceps", "Tríceps", ["Tríceps"], []],
+  ["Plancha", "Core", ["Recto abdominal", "Transverso abdominal"], ["Oblicuos", "Erectores espinales"]],
+  ["Crunch", "Core", ["Recto abdominal"], ["Oblicuos"]],
+  ["Elevación de piernas", "Core", ["Recto abdominal"], ["Oblicuos"]],
+  ["Rueda abdominal", "Core", ["Recto abdominal"], ["Dorsal ancho", "Oblicuos"]],
+  ["Pallof press", "Core", ["Oblicuos", "Transverso abdominal"], []],
+  ["Cinta", "Cardio", [], []], ["Bicicleta", "Cardio", [], []], ["Elíptica", "Cardio", [], []], ["Remo (máquina)", "Cardio", [], []], ["Escaladora", "Cardio", [], []]
+];
+/* Músculos concretos: grupo al que pertenecen y zona en el mapa del cuerpo */
+const MUSCLE_DETAIL = {
+  "Glúteo mayor": "Glúteos", "Glúteo medio": "Glúteos", "Abductores": "Glúteos", "Cuádriceps": "Cuádriceps", "Isquiotibiales": "Isquiotibiales",
+  "Aductores": "Aductores", "Gemelos": "Gemelos", "Sóleo": "Gemelos", "Pectoral mayor": "Pecho", "Pectoral superior": "Pecho",
+  "Dorsal ancho": "Espalda", "Trapecio medio y romboides": "Espalda", "Trapecio superior": "Espalda", "Erectores espinales": "Zona lumbar",
+  "Deltoides anterior": "Hombros", "Deltoides lateral": "Hombros", "Deltoides posterior": "Hombros", "Manguito rotador": "Hombros",
+  "Bíceps": "Bíceps", "Braquial": "Bíceps", "Braquiorradial": "Antebrazo", "Antebrazo": "Antebrazo", "Tríceps": "Tríceps",
+  "Recto abdominal": "Core", "Oblicuos": "Core", "Transverso abdominal": "Core"
 };
+const DETAIL_MUSCLES = Object.keys(MUSCLE_DETAIL);
 
 /* ---------- Siembra de la biblioteca la primera vez ---------- */
 let seeding = false;
 document.addEventListener("hub:loaded", async () => {
-  if (seeding || S.needsMigration || S.d.fit_exercises.length) return;
+  if (seeding || S.needsMigration) return;
   seeding = true;
   try {
-    const rows = []; Object.entries(EX_LIBRARY).forEach(([m, l]) => l.forEach(name => rows.push({ name, muscle: m })));
-    await insertMany("fit_exercises", rows); render();
+    // añade los ejercicios que falten y completa los músculos concretos de los que ya tenías
+    const byName = {}; S.d.fit_exercises.forEach(e => byName[e.name.toLowerCase()] = e);
+    const missing = EX_LIB.filter(([n]) => !byName[n.toLowerCase()]).map(([name, muscle, primary_muscles, secondary_muscles]) => ({ name, muscle, primary_muscles, secondary_muscles }));
+    if (missing.length) await insertMany("fit_exercises", missing);
+    const upd = EX_LIB.map(l => [byName[l[0].toLowerCase()], l]).filter(([e, l]) => e && l[2].length && (!e.primary_muscles || !e.primary_muscles.length));
+    for (let i = 0; i < upd.length; i += 8) await Promise.all(upd.slice(i, i + 8).map(([e, l]) => save("fit_exercises", { primary_muscles: l[2], secondary_muscles: l[3] }, e.id)));
+    if (missing.length || upd.length) render();
   } catch (_) {} finally { seeding = false; }
 });
+const primOf = ex => ex?.primary_muscles?.length ? ex.primary_muscles : [];
+const secOf = ex => ex?.secondary_muscles || [];
+const exMuscleText = ex => primOf(ex).length ? primOf(ex).join(", ") : (ex?.muscle || "");
 
 /* ---------- Consultas ---------- */
 const exercisesSorted = () => S.d.fit_exercises.filter(e => !e.archived).sort((a, b) => MUSCLES.indexOf(a.muscle) - MUSCLES.indexOf(b.muscle) || a.name.localeCompare(b.name, "es"));
 const routinesSorted = () => [...S.d.fit_routines].sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at));
 const rexOf = rid => S.d.fit_routine_exercises.filter(x => x.routine_id === rid).sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at));
-const musclesOfRoutine = rid => [...new Set(rexOf(rid).map(r => byId("fit_exercises", r.exercise_id)?.muscle).filter(Boolean))];
+const musclesOfRoutine = rid => [...new Set(rexOf(rid).flatMap(r => { const ex = byId("fit_exercises", r.exercise_id); return primOf(ex).length ? primOf(ex) : (ex?.muscle && ex.muscle !== "Cardio" ? [ex.muscle] : []); }))];
 const setsOf = sid => S.d.fit_sets.filter(s => s.session_id === sid).sort((a, b) => a.position - b.position || a.set_index - b.set_index);
 const sessionsOn = k => S.d.fit_sessions.filter(s => s.date === k);
 const activeSession = () => S.d.fit_sessions.find(s => !s.finished && s.kind === "gym");
@@ -68,34 +135,60 @@ function fitToday() {
   });
 }
 
+/* Series por músculo: principal cuenta 1, secundario 0,5 */
+function detailSets(fromK, toK) {
+  const ids = new Set(S.d.fit_sessions.filter(s => s.date >= fromK && s.date <= toK).map(s => s.id)), out = {};
+  S.d.fit_sets.filter(s => s.done && ids.has(s.session_id)).forEach(s => addExSets(out, byId("fit_exercises", s.exercise_id), 1, s.muscle));
+  return out;
+}
+function addExSets(out, ex, n, fallback) {
+  const pr = primOf(ex);
+  if (!pr.length) { const g = ex?.muscle || fallback; if (g && g !== "Cardio") out["~" + g] = (out["~" + g] || 0) + n; return; }
+  pr.forEach(m => out[m] = (out[m] || 0) + n);
+  secOf(ex).forEach(m => out[m] = (out[m] || 0) + n * 0.5);
+}
+function toGroups(det) {
+  const out = {};
+  Object.entries(det).forEach(([m, n]) => { const g = m.startsWith("~") ? m.slice(1) : (MUSCLE_DETAIL[m] || m); out[g] = (out[g] || 0) + n; });
+  return out;
+}
 function weekMuscleSets(offsetWeeks = 0) {
   const a = keyOf(addDays(weekStart(new Date()), 7 * offsetWeeks)), b = keyOf(addDays(fromKey(a), 6));
-  const ids = new Set(S.d.fit_sessions.filter(s => s.date >= a && s.date <= b).map(s => s.id));
+  return toGroups(detailSets(a, b));
+}
+/* Series semanales según el plan (rutinas asignadas a cada día) */
+function planDetailSets() {
   const out = {};
-  S.d.fit_sets.filter(s => s.done && ids.has(s.session_id)).forEach(s => out[s.muscle || "Otro"] = (out[s.muscle || "Otro"] || 0) + 1);
+  S.d.fit_schedule.filter(p => p.kind === "gym" && p.routine_id).forEach(p => rexOf(p.routine_id).forEach(x => addExSets(out, byId("fit_exercises", x.exercise_id), x.target_sets || 0)));
   return out;
 }
 
 /* =====================================================================
    Vistas
    ===================================================================== */
-const ENTRENO_TABS = [["hoy", "Hoy"], ["semana", "Semana"], ["rutinas", "Rutinas"], ["progreso", "Progreso"], ["historial", "Historial"]];
+
 const muscleChips = ms => ms.length ? `<div class="mchips">${ms.map(m => `<span>${esc(m)}</span>`).join("")}</div>` : "";
 
 MOD.entreno = {
+  tabs: r => r.sub === "sesion" && !byId("fit_sessions", r.id)?.finished ? null : [["hoy", "Hoy", "hoy"], ["semana", "Semana", "semana"], ["rutinas", "Rutinas", "rutinas"], ["musculos", "Músculos", "cuerpo"], ["progreso", "Progreso", "progreso"]],
+  tabOf: r => ({ rutina: "rutinas", ejercicio: "progreso", historial: "progreso", sesion: "progreso", biblioteca: "rutinas" }[r.sub] || r.sub || "hoy"),
   render(r) {
     const sub = r.sub || "hoy";
     if (sub === "sesion") return viewSession(r.id);
     if (sub === "rutina") return viewRoutine(r.id);
     if (sub === "ejercicio") return viewExercise(r.id);
-    const body = { hoy: viewFitHoy, semana: viewWeek, rutinas: viewRoutines, progreso: viewProgress, historial: viewHistory }[sub] || viewFitHoy;
-    return modHead("Entreno") + subnav("entreno", ENTRENO_TABS, sub) + body();
+    if (sub === "historial") return modHead("Historial", ["entreno", "progreso", "Progreso"]) + viewHistory();
+    if (sub === "biblioteca") return modHead("Ejercicios", ["entreno", "rutinas", "Rutinas"]) + viewLibrary();
+    const titles = { hoy: "Entreno", semana: "Mi semana", rutinas: "Rutinas", musculos: "Músculos", progreso: "Progreso" };
+    const body = { hoy: viewFitHoy, semana: viewWeek, rutinas: viewRoutines, musculos: viewMuscles, progreso: viewProgress }[sub] || viewFitHoy;
+    return modHead(titles[sub] || "Entreno") + body();
   },
   fab(r) {
     const sub = r.sub || "hoy";
     if (sub === "semana") return { label: "Añadir al plan", fn: () => openSched(null, wd1(new Date())) };
     if (sub === "rutinas") return { label: "Nueva rutina", fn: () => openRoutineMeta(null) };
-    if (sub === "historial") return { label: "Registrar actividad", fn: () => openLog() };
+    if (sub === "historial" || sub === "progreso") return { label: "Registrar actividad", fn: () => openLog() };
+    if (sub === "biblioteca") return { label: "Nuevo ejercicio", fn: () => openExercise(null) };
     if (sub === "sesion") return null;
     return null;
   }
@@ -128,7 +221,7 @@ function viewFitHoy() {
   const ws = weekMuscleSets(), wk0 = keyOf(weekStart(new Date())), wk1 = keyOf(addDays(weekStart(new Date()), 6));
   const wsess = S.d.fit_sessions.filter(s => s.finished && s.date >= wk0 && s.date <= wk1);
   h += `<div class="block"><h2>Esta semana</h2>
-    <div class="stats3"><div><b>${wsess.filter(s => s.kind === "gym").length}</b><span>gimnasio</span></div><div><b>${wsess.filter(s => s.kind === "pilates").length}</b><span>pilates</span></div><div><b>${sum(Object.values(ws))}</b><span>series</span></div></div>
+    <div class="stats3"><div><b>${wsess.filter(s => s.kind === "gym").length}</b><span>gimnasio</span></div><div><b>${wsess.filter(s => s.kind === "pilates").length}</b><span>pilates</span></div><div><b>${S.d.fit_sets.filter(x => x.done && wsess.some(s => s.id === x.session_id)).length}</b><span>series</span></div></div>
     ${muscleBars(ws)}</div>`;
   return h;
 }
@@ -136,7 +229,7 @@ function muscleBars(ws) {
   const entries = Object.entries(ws).sort((a, b) => b[1] - a[1]);
   if (!entries.length) return `<div class="empty">Cuando completes series, aquí verás cuántas haces por grupo muscular.</div>`;
   const max = Math.max(...entries.map(e => e[1]));
-  return `<div class="mbars">${entries.map(([m, n]) => `<div class="mbar"><span>${esc(m)}</span>${bar(n / max * 100)}<b>${n}</b></div>`).join("")}</div>`;
+  return `<div class="mbars">${entries.map(([m, n]) => `<div class="mbar"><span>${esc(m)}</span>${bar(n / max * 100)}<b>${fmtNum(n, 1)}</b></div>`).join("")}</div>`;
 }
 
 function viewWeek() {
@@ -156,7 +249,16 @@ function viewWeek() {
   }).join("");
 }
 
+function viewLibrary() {
+  let h = "", cur = "";
+  exercisesSorted().forEach(e => { if (e.muscle !== cur) { if (cur) h += `</div>`; cur = e.muscle; h += `<div class="group-h">${esc(cur)}</div><div class="list">`; }
+    h += `<button class="row" data-act="editExercise" data-id="${e.id}"><span class="body"><span class="title">${esc(e.name)}</span><span class="meta">${esc(primOf(e).join(", ") || "Sin músculos asignados")}${secOf(e).length ? ` · también ${esc(secOf(e).join(", ").toLowerCase())}` : ""}</span></span></button>`; });
+  return `<p class="lead">Toca un ejercicio para ver o cambiar los músculos que trabaja.</p>` + h + (cur ? `</div>` : "");
+}
 function viewRoutines() {
+  return viewRoutinesList() + `<button class="link-btn" data-go="entreno/biblioteca" style="margin-top:14px">Ver la biblioteca de ejercicios</button>`;
+}
+function viewRoutinesList() {
   const rs = routinesSorted();
   if (!rs.length) return `<div class="empty">Aún no tienes rutinas. Crea una por cada tipo de día, por ejemplo "Día de culo" o "Bíceps y espalda". <button data-act="newRoutine">Crear rutina</button></div>`;
   return `<div class="list">${rs.map(r => {
@@ -176,7 +278,7 @@ function viewRoutine(id) {
       const ex = byId("fit_exercises", x.exercise_id);
       const meta = [`${x.target_sets} × ${x.target_reps || "?"}`, x.target_weight !== null ? fmtNum(x.target_weight) + " kg" : "", `descanso ${x.rest_sec} s`].filter(Boolean).join(", ");
       return `<div class="rex"><button class="rex-main" data-act="editRex" data-id="${x.id}"><span class="rex-n">${i + 1}</span>
-        <span class="body"><span class="title">${esc(ex?.name || "Ejercicio")}</span><span class="meta">${esc(ex?.muscle || "")}, ${esc(meta)}</span></span></button>
+        <span class="body"><span class="title">${esc(ex?.name || "Ejercicio")}</span><span class="meta">${esc(exMuscleText(ex))}, ${esc(meta)}</span></span></button>
         <div class="rex-move"><button class="icon-xs" data-act="moveRex" data-id="${x.id}" data-dir="-1" aria-label="Subir" ${i === 0 ? "disabled" : ""}>▲</button>
         <button class="icon-xs" data-act="moveRex" data-id="${x.id}" data-dir="1" aria-label="Bajar" ${i === items.length - 1 ? "disabled" : ""}>▼</button></div></div>`;
     }).join("")}</div>` : `<div class="empty">Esta rutina no tiene ejercicios todavía.</div>`}
@@ -199,7 +301,7 @@ function viewSession(id) {
     groups.map(g => {
       const last = g.ex ? lastSetsFor(g.ex, id) : null, rx = rexMap[g.ex];
       return `<div class="ex-block">
-        <div class="ex-h"><div><b>${esc(g.name)}</b><span>${esc(g.muscle || "")}${rx ? `, objetivo ${rx.target_sets} × ${esc(rx.target_reps || "?")}` : ""}</span></div>
+        <div class="ex-h"><div><b>${esc(g.name)}</b><span>${esc(exMuscleText(byId("fit_exercises", g.ex)) || g.muscle || "")}${rx ? `, objetivo ${rx.target_sets} × ${esc(rx.target_reps || "?")}` : ""}</span></div>
           <button class="icon-xs" data-act="removeExFromSession" data-sid="${id}" data-pos="${g.pos}" data-ex="${g.ex || ""}" aria-label="Quitar ${esc(g.name)}">✕</button></div>
         ${last ? `<div class="last">Última vez (${esc(niceDate(last.session.date))}): ${esc(setsSummary(last.sets))}</div>` : ""}
         <div class="set-h"><span>Serie</span><span>Kg</span><span>Reps</span><span></span></div>
@@ -230,13 +332,22 @@ function exerciseStats() {
 }
 
 function viewProgress() {
+  return viewProgressInner() + `<div class="block"><h2>Historial <button data-go="entreno/historial">Ver todo</button></h2>${viewHistoryShort()}</div>`;
+}
+function viewHistoryShort() {
+  const list = finishedSessionsDesc().slice(0, 5);
+  if (!list.length) return `<div class="empty">Aún no hay entrenos registrados.</div>`;
+  return `<div class="list">${list.map(s => { const r = s.routine_id ? byId("fit_routines", s.routine_id) : null;
+    return `<button class="row" ${s.kind === "gym" ? `data-go="entreno/sesion/${s.id}"` : `data-act="editLog" data-id="${s.id}"`}><span class="bar" style="background:${s.kind === "pilates" ? "var(--c-ciruela)" : colorVar(r?.color)}"></span>
+      <span class="body"><span class="title">${esc(s.name || KIND_LABEL[s.kind])}</span><span class="meta">${esc(niceDate(s.date))}${s.duration_min ? `, ${s.duration_min} min` : ""}</span></span></button>`; }).join("")}</div>`;
+}
+function viewProgressInner() {
   const mk = monthKey(new Date()), monthSess = S.d.fit_sessions.filter(s => s.finished && s.date.startsWith(mk));
   const stats = exerciseStats();
-  const last4 = [0, -1, -2, -3].map(o => sum(Object.values(weekMuscleSets(o))));
   return `<div class="block"><h2>Este mes</h2>
     <div class="stats3"><div><b>${monthSess.filter(s => s.kind === "gym").length}</b><span>gimnasio</span></div><div><b>${monthSess.filter(s => s.kind === "pilates").length}</b><span>pilates</span></div><div><b>${sum(monthSess, s => s.duration_min)}</b><span>minutos</span></div></div></div>
-  <div class="block"><h2>Series por músculo esta semana</h2>${muscleBars(weekMuscleSets())}
-    <p class="hint">Series en las últimas 4 semanas, de la más antigua a esta: ${last4.reverse().join(", ")}.</p></div>
+  <div class="block"><h2>Series por grupo esta semana</h2>${muscleBars(weekMuscleSets())}
+    <p class="hint">Los músculos principales de cada ejercicio cuentan una serie y los secundarios, media.</p></div>
   <div class="block"><h2>Tus ejercicios</h2>${stats.length ? `<div class="list">${stats.map(m => `<button class="row" data-go="entreno/ejercicio/${m.id}">
       <span class="body"><span class="title">${esc(m.name)}</span><span class="meta">${esc(m.muscle || "")}, última vez ${esc(niceDate(m.last).toLowerCase())}</span></span>
       <span class="pr">${m.best ? fmtNum(m.best) + " kg" : ""}</span></button>`).join("")}</div>`
@@ -490,7 +601,7 @@ function pickExercise(cb) {
   const listHtml = () => {
     const items = exercisesSorted().filter(e => (!muscle || e.muscle === muscle) && (!q || e.name.toLowerCase().includes(q)));
     let cur = "", h = "";
-    items.forEach(e => { if (e.muscle !== cur) { cur = e.muscle; h += `<div class="group-h">${esc(cur)}</div>`; } h += `<button class="pick" data-pick="${e.id}">${esc(e.name)}</button>`; });
+    items.forEach(e => { if (e.muscle !== cur) { cur = e.muscle; h += `<div class="group-h">${esc(cur)}</div>`; } h += `<button class="pick" data-pick="${e.id}">${esc(e.name)}${primOf(e).length ? `<small>${esc(primOf(e).join(", "))}${secOf(e).length ? ` · también ${esc(secOf(e).join(", ").toLowerCase())}` : ""}</small>` : ""}</button>`; });
     return h || `<div class="empty">No hay ejercicios con ese nombre. Puedes crearlo abajo.</div>`;
   };
   openSheet(`${sheetHead("Elegir ejercicio")}
@@ -505,16 +616,28 @@ function pickExercise(cb) {
     $("#pkNew", root).addEventListener("click", () => newExercise(q, muscle, cb));
   });
 }
-function newExercise(name, muscle, cb) {
-  formSheet("Nuevo ejercicio", `${field("Nombre", inp("neName", name), "neName")}${field("Grupo muscular", sel("neMuscle", MUSCLES.map(m => [m, m]), muscle || "Glúteo"), "neMuscle")}`, {
-    submit: "Crear y añadir",
+const muscleChipsSel = (id, sel) => `<div class="cat-pills" id="${id}">${DETAIL_MUSCLES.map(m => `<button type="button" data-mm="${esc(m)}" aria-pressed="${sel.includes(m)}">${esc(m)}</button>`).join("")}</div>`;
+const readChips = (root, id) => $$(`#${id} [data-mm]`, root).filter(b => b.getAttribute("aria-pressed") === "true").map(b => b.dataset.mm);
+function bindToggleChips(root) { $$("[data-mm]", root).forEach(b => b.addEventListener("click", () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true"))); }
+function newExercise(name, muscle, cb) { openExercise(null, name, muscle, cb); }
+function openExercise(ex, name, muscle, cb) {
+  formSheet(ex ? "Editar ejercicio" : "Nuevo ejercicio", `${field("Nombre", inp("neName", ex?.name ?? name ?? ""), "neName")}
+    ${field("Grupo", sel("neMuscle", MUSCLES.map(m => [m, m]), ex?.muscle || muscle || "Glúteo"), "neMuscle")}
+    <div class="field"><span class="lbl">Músculos principales</span>${muscleChipsSel("nePri", primOf(ex))}</div>
+    <div class="field"><span class="lbl">Músculos secundarios</span>${muscleChipsSel("neSec", secOf(ex))}</div>
+    <p class="hint">Los principales cuentan como una serie completa; los secundarios, como media serie.</p>`, {
+    submit: ex ? "Guardar" : "Crear y añadir",
+    mount: bindToggleChips,
     onSubmit: async root => {
       const n = val(root, "neName"); if (!n) return "Escribe el nombre del ejercicio.";
-      const ex = await save("fit_exercises", { name: n, muscle: val(root, "neMuscle") });
-      setTimeout(() => cb(ex.id));
-    }
+      const pri = readChips(root, "nePri"), sec = readChips(root, "neSec").filter(m => !pri.includes(m));
+      const saved = await save("fit_exercises", { name: n, muscle: val(root, "neMuscle"), primary_muscles: pri, secondary_muscles: sec }, ex?.id);
+      if (cb) setTimeout(() => cb(saved.id)); else toast("Ejercicio guardado");
+    },
+    onDelete: ex ? () => save("fit_exercises", { archived: true }, ex.id) : null, deleteLabel: "Quitar de la biblioteca"
   });
 }
+ACT.editExercise = (el, d) => openExercise(byId("fit_exercises", d.id));
 
 /* ---------- Temporizador de descanso ---------- */
 let restEnd = 0, restTimer = null;

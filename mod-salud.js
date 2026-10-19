@@ -84,10 +84,12 @@ const fmtMetric = (mt, v) => v == null ? "–" : `${fmtNum(v, mt.d)}${mt.u ? (mt
    Vistas
    ===================================================================== */
 MOD.salud = {
+  tabs: [["resumen", "Resumen", "resumen"], ["historial", "Historial", "historial"]],
+  tabOf: r => r.sub === "historial" ? "historial" : "resumen",
   render(r) {
     if (r.sub === "metrica") return viewMetric(r.id);
     const sub = r.sub || "resumen";
-    return modHead("Salud") + subnav("salud", [["resumen", "Resumen"], ["historial", "Historial"]], sub) + (sub === "historial" ? viewMeasHistory() : viewHealthSummary());
+    return modHead(sub === "historial" ? "Mediciones" : "Salud") + (sub === "historial" ? viewMeasHistory() : viewHealthSummary());
   },
   fab: r => r.sub === "metrica" ? null : { label: "Añadir medición", fn: () => openMeasurement(null) }
 };

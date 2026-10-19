@@ -2,7 +2,7 @@
 /* =====================================================================
    Mi Hub · núcleo (utilidades, datos, navegación, formularios)
    ===================================================================== */
-const APP_VERSION = "Fase 3";
+const APP_VERSION = "Fase 4";
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -70,12 +70,13 @@ const db = configured ? supabase.createClient(CFG.SUPABASE_URL.replace(/\/(rest\
 const TABLES = ["events", "tasks",
   "fit_exercises", "fit_routines", "fit_routine_exercises", "fit_schedule", "fit_sessions", "fit_sets",
   "fin_accounts", "fin_balances", "fin_transactions", "fin_recurring", "fin_budgets", "fin_goals",
-  "user_profile", "body_measurements", "foods", "meal_entries", "diet_template", "personal_items", "event_categories"];
+  "user_profile", "body_measurements", "foods", "meal_entries", "diet_template", "personal_items", "event_categories",
+  "diet_days", "supplements", "supplement_logs"];
 
 const S = { user: null, d: {}, loaded: false, needsMigration: false, route: { mod: "inicio" }, ui: {} };
 TABLES.forEach(t => S.d[t] = []);
 
-const CACHE_KEY = "mihub-cache-v3";
+const CACHE_KEY = "mihub-cache-v4";
 function saveCache() {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ uid: S.user?.id, d: S.d, at: Date.now() })); } catch (_) {}
 }
@@ -172,6 +173,13 @@ function render() {
   if (!S.user) return;
   const m = MOD[S.route.mod] || MOD.inicio;
   $("#view").innerHTML = (S.needsMigration ? `<div class="banner warn">Falta actualizar la base de datos. Ejecuta en Supabase los scripts de actualización que te faltan (<b>schema-fase2.sql</b> y/o <b>schema-fase3.sql</b>) y vuelve a abrir la app.</div>` : "") + m.render(S.route);
+  const tabs = m.tabs ? (typeof m.tabs === "function" ? m.tabs(S.route) : m.tabs) : null, tb = $("#tabbar");
+  if (tabs) {
+    const cur = m.tabOf ? m.tabOf(S.route) : (S.route.sub || tabs[0][0]);
+    tb.innerHTML = `<nav style="grid-template-columns:repeat(${tabs.length},1fr)">${tabs.map(([k, l, ic]) =>
+      `<button data-go="${S.route.mod}/${k}" aria-current="${k === cur ? "page" : "false"}">${TAB_ICONS[ic] || TAB_ICONS.dot}<span>${esc(l)}</span></button>`).join("")}</nav>`;
+  }
+  tb.classList.toggle("hidden", !tabs); document.body.classList.toggle("has-tabs", !!tabs);
   const f = m.fab ? m.fab(S.route) : null;
   const fab = $("#fab");
   fab.classList.toggle("hidden", !f);
@@ -179,6 +187,31 @@ function render() {
   if (f) fab.setAttribute("aria-label", f.label);
   m.after && m.after(S.route);
 }
+
+/* Iconos de la barra inferior de cada módulo */
+const _i = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const TAB_ICONS = {
+  dot: _i('<circle cx="12" cy="12" r="3"/>'),
+  hoy: _i('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+  semana: _i('<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M7 14h2M11 14h2M15 14h2"/>'),
+  mes: _i('<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>'),
+  agenda: _i('<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>'),
+  lista: _i('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/>'),
+  hecho: _i('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/>'),
+  rutinas: _i('<path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>'),
+  cuerpo: _i('<circle cx="12" cy="4.5" r="2"/><path d="M6 8.5l6 1 6-1M12 9.5V15M12 15l-3 6M12 15l3 6M7.5 9l-1 5M16.5 9l1 5"/>'),
+  progreso: _i('<path d="M3 20h18"/><path d="M5 16l4-5 4 3 6-8"/>'),
+  historial: _i('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  resumen: _i('<path d="M12 3v9l7 4"/><circle cx="12" cy="12" r="9"/>'),
+  gastos: _i('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>'),
+  fijos: _i('<path d="M4 12a8 8 0 0114-5.3L20 9M20 12a8 8 0 01-14 5.3L4 15"/><path d="M20 4v5h-5M4 20v-5h5"/>'),
+  cuentas: _i('<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M16 15h2"/>'),
+  objetivos: _i('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>'),
+  plan: _i('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/>'),
+  compra: _i('<path d="M3 4h2l2.4 11.2a2 2 0 002 1.8h7.7a2 2 0 002-1.6L21 8H6"/><circle cx="10" cy="20.5" r="1"/><circle cx="17" cy="20.5" r="1"/>'),
+  mas: _i('<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>'),
+  medidas: _i('<path d="M4 20L20 4M7 17l2 2M10 14l2 2M13 11l2 2M16 8l2 2"/>')
+};
 
 /* Cabecera de módulo con botón para volver */
 function modHead(title, back = ["inicio"], right = "") {
@@ -311,6 +344,7 @@ function onSession(session) {
 function boot() {
   $("#scrim").addEventListener("click", closeSheet);
   $("#fab").addEventListener("click", () => S.ui.fab && S.ui.fab.fn());
+  $("#aiBtn").addEventListener("click", () => window.openAssistant && openAssistant());
   try { history.replaceState(S.route, ""); } catch (_) {}
   if (!configured) return showScreen("setup");
 

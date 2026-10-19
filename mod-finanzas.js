@@ -43,12 +43,12 @@ function monthsLeft(dateKey) {
 /* =====================================================================
    Vistas
    ===================================================================== */
-const FIN_TABS = [["resumen", "Resumen"], ["gastos", "Gastos"], ["fijos", "Fijos"], ["cuentas", "Cuentas"], ["objetivos", "Objetivos"]];
 MOD.finanzas = {
+  tabs: [["resumen", "Resumen", "resumen"], ["gastos", "Gastos", "gastos"], ["fijos", "Fijos", "fijos"], ["cuentas", "Cuentas", "cuentas"], ["objetivos", "Objetivos", "objetivos"]],
   render(r) {
     const sub = r.sub || "resumen";
     const body = { resumen: viewFinSummary, gastos: viewExpenses, fijos: viewFixed, cuentas: viewAccounts, objetivos: viewGoals }[sub] || viewFinSummary;
-    return modHead("Finanzas") + subnav("finanzas", FIN_TABS, sub) + body();
+    return modHead({ resumen: "Finanzas", gastos: "Gastos", fijos: "Gastos fijos", cuentas: "Cuentas", objetivos: "Objetivos" }[sub] || "Finanzas") + body();
   },
   fab(r) {
     const sub = r.sub || "resumen";
