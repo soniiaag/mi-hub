@@ -2,7 +2,7 @@
 /* =====================================================================
    Mi Hub · núcleo (utilidades, datos, navegación, formularios)
    ===================================================================== */
-const APP_VERSION = "Fase 4";
+const APP_VERSION = "Fase 5";
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -272,8 +272,9 @@ const numInp = (id, val, ph = "") => `<input class="input" id="${id}" inputmode=
 const area = (id, val = "") => `<textarea class="input" id="${id}">${esc(val ?? "")}</textarea>`;
 const sel = (id, opts, val) => `<select class="input" id="${id}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(val ?? "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
 const val = (root, id) => $("#" + id, root).value.trim();
+const COLOR_NAMES = { verde: "Topo", azul: "Niebla", ambar: "Caramelo", ciruela: "Malva", coral: "Terracota" };
 function colorChips(current) {
-  return `<div class="chips" data-chips>${COLORS.map(c => `<button type="button" class="chip" data-color="${c}" aria-label="${c}" aria-pressed="${c === current}" style="background:${colorVar(c)}"></button>`).join("")}</div>`;
+  return `<div class="chips" data-chips>${COLORS.map(c => `<button type="button" class="chip" data-color="${c}" aria-label="${COLOR_NAMES[c]}" title="${COLOR_NAMES[c]}" aria-pressed="${c === current}" style="background:${colorVar(c)}"></button>`).join("")}</div>`;
 }
 function bindChips(root, cb) {
   $$("[data-chips] .chip", root).forEach(b => b.addEventListener("click", () => { $$("[data-chips] .chip", root).forEach(x => x.setAttribute("aria-pressed", x === b)); cb(b.dataset.color); }));
@@ -297,14 +298,14 @@ function lineChart(points, { fy = v => fmtNum(v), h = 150 } = {}) {
   const d = points.map((p, i) => `${i ? "L" : "M"}${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join("");
   const last = points[points.length - 1], first = points[0];
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfico de evolución">
-    <path d="${d}" fill="none" stroke="var(--primary)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
-    ${points.map(p => `<circle cx="${X(p.x).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="3" fill="var(--primary)"/>`).join("")}
+    <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+    ${points.map(p => `<circle cx="${X(p.x).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="3" fill="var(--accent)"/>`).join("")}
     <text x="${X(last.x)}" y="${Y(last.y) - 8}" text-anchor="end" class="ct">${esc(fy(last.y))}</text>
     <text x="${L}" y="${H - 5}" class="cx">${esc(fmt(new Date(first.x), { day: "numeric", month: "short" }))}</text>
     <text x="${W - R}" y="${H - 5}" text-anchor="end" class="cx">${esc(fmt(new Date(last.x), { day: "numeric", month: "short" }))}</text>
   </svg>`;
 }
-const bar = (pct, color = "var(--primary)") => `<div class="pbar"><i style="width:${Math.max(0, Math.min(100, pct)).toFixed(1)}%;background:${color}"></i></div>`;
+const bar = (pct, color = "var(--accent)") => `<div class="pbar"><i style="width:${Math.max(0, Math.min(100, pct)).toFixed(1)}%;background:${color}"></i></div>`;
 
 /* =====================================================================
    Eventos globales de la interfaz

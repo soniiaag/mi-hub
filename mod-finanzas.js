@@ -65,7 +65,7 @@ function viewFinSummary() {
   const accs = accountsSorted(), nw = netWorth(), top = catTotals(mk).slice(0, 4), goals = S.d.fin_goals;
   let h = `<div class="nw"><span>Patrimonio</span><b>${eur(nw, 0)}</b></div>`;
   if (!accs.length) h += `<div class="empty">Añade tus cuentas para ver tu patrimonio. <button data-act="finQuickSetup">Configurar mis cuentas</button></div>`;
-  else h += `<div class="list">${accs.map(a => { const v = balanceOf(a); return `<div class="acc-line"><span>${esc(a.name)}</span>${bar(nw > 0 ? v / nw * 100 : 0, "var(--c-azul)")}<b>${eur(v, 0)}</b></div>`; }).join("")}</div>`;
+  else h += `<div class="list">${accs.map(a => { const v = balanceOf(a); return `<div class="acc-line"><span>${esc(a.name)}</span>${bar(nw > 0 ? v / nw * 100 : 0, "var(--accent)")}<b>${eur(v, 0)}</b></div>`; }).join("")}</div>`;
   const series = netWorthSeries();
   if (series.length >= 2) h += `<div class="block" style="margin-top:20px"><h2>Evolución del patrimonio</h2>${lineChart(series, { fy: v => eur(v, 0) })}</div>`;
   h += `<div class="block" style="margin-top:22px"><h2>${esc(monthLabel(mk))}</h2>
@@ -86,7 +86,7 @@ function catLine(c, v) {
   return `<button class="cat-line" data-act="editBudget" data-cat="${esc(c)}">
     <span class="ci">${catIcon(c)}</span>
     <span class="cbody"><span class="ctop"><span>${esc(c)}</span><b>${eur(v)}${b ? ` <small>de ${eur(b.monthly_limit, 0)}</small>` : ""}</b></span>
-    ${b ? bar(pct, pct > 100 ? "var(--danger)" : pct > 85 ? "var(--c-ambar)" : "var(--primary)") : ""}</span></button>`;
+    ${b ? bar(pct, pct > 100 ? "var(--danger)" : pct > 85 ? "var(--c-coral)" : "var(--accent)") : ""}</span></button>`;
 }
 
 function viewExpenses() {

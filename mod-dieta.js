@@ -170,7 +170,7 @@ function macroBars(t, tg, planned) {
   return `<div class="macros">${rows.map(([l, v, g, u]) => {
     const pct = g ? v / g * 100 : 0, over = g && pct > 110;
     return `<div class="macro"><div class="mc-top"><span>${l}</span><b>${fmtNum(v, 0)}${g ? ` <small>/ ${fmtNum(g, 0)} ${u}</small>` : ` <small>${u}</small>`}</b></div>
-      ${g ? bar(pct, over && l === "Calorías" ? "var(--c-ambar)" : l === "Calorías" ? "var(--ink)" : "var(--primary)") : ""}</div>`;
+      ${g ? bar(pct, over && l === "Calorías" ? "var(--c-ambar)" : l === "Calorías" ? "var(--ink)" : "var(--accent)") : ""}</div>`;
   }).join("")}${planned ? `<div class="mc-plan">Has marcado ${fmtNum(t.kcal, 0)} de ${fmtNum(planned.kcal, 0)} kcal planificadas para hoy.</div>` : ""}</div>`;
 }
 
@@ -223,7 +223,7 @@ function viewDietWeek() {
     return `<button class="row wk-row ${k === t0 ? "is-today" : ""}" data-go="dieta/dia/${k}">
       <span class="wk-d"><b>${esc(cap(fmt(d, { weekday: "short" })).replace(".", ""))}</b><span>${d.getDate()}</span></span>
       <span class="body">${its.length ? `<span class="title">${past ? `${fmtNum(eaten.kcal, 0)} de ` : ""}${fmtNum(t.kcal, 0)} kcal${tg.kcal ? ` <small>(objetivo ${fmtNum(tg.kcal, 0)})</small>` : ""}</span>
-        <span class="meta">${fmtNum(t.p, 0)} g proteína. ${esc(names)}</span>${past && t.kcal ? bar(eaten.kcal / t.kcal * 100, "var(--primary)") : ""}` : `<span class="title muted">Sin comidas planificadas</span>`}</span></button>`;
+        <span class="meta">${fmtNum(t.p, 0)} g proteína. ${esc(names)}</span>${past && t.kcal ? bar(eaten.kcal / t.kcal * 100, "var(--accent)") : ""}` : `<span class="title muted">Sin comidas planificadas</span>`}</span></button>`;
   }).join("") + `</div>`;
   if (!S.d.diet_template.length) h += `<p class="hint">Crea tu semana tipo en Plan y todos los días te aparecerán ya rellenos.</p>`;
   return h;

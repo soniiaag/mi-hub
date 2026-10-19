@@ -1,7 +1,7 @@
 // Mi Hub · service worker
 // Guarda la app en el móvil para que abra rápido y funcione sin conexión.
 // Los datos NO se guardan aquí: van siempre a Supabase.
-const VERSION = "mihub-v4";
+const VERSION = "mihub-v5";
 const SHELL = ["./", "index.html", "styles.css", "config.js", "supabase.js", "core.js", "mod-agenda.js", "mod-entreno.js",
   "mod-finanzas.js", "mod-salud.js", "mod-dieta.js", "mod-datos.js", "mod-musculos.js", "mod-inicio.js", "asistente.js", "manifest.json", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
