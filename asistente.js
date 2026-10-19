@@ -4,7 +4,8 @@
    Con clave de Gemini usa IA; sin clave, un modo básico sin conexión.
    Siempre pide confirmación antes de guardar nada.
    ===================================================================== */
-const AI_KEY = "mihub-ai-key", AI_MODEL = "mihub-ai-model", AI_DEFAULT_MODEL = "gemini-flash-latest";
+const AI_KEY = "mihub-ai-key", AI_MODEL = "mihub-ai-model", AI_DEFAULT_MODEL = "gemini-flash-lite-latest";
+const AI_FALLBACKS = ["gemini-flash-lite-latest", "gemini-flash-latest"];
 const aiKey = () => { try { return localStorage.getItem(AI_KEY) || ""; } catch (_) { return ""; } };
 const aiModel = () => { try { return localStorage.getItem(AI_MODEL) || AI_DEFAULT_MODEL; } catch (_) { return AI_DEFAULT_MODEL; } };
 const AI = { msgs: [], history: [], busy: false, pending: {} };
@@ -122,18 +123,37 @@ Categorías de eventos: ${S.d.event_categories.map(c => c.name).join(", ") || "n
 Listas de tareas: ${[...new Set(["Personal", "Trabajo", ...S.d.tasks.map(t => t.list)])].join(", ")}.
 Categorías de gasto: ${CATS.map(c => c[0]).join(", ")}. De ingreso: ${INCOME_CATS.map(c => c[0]).join(", ")}.`;
 }
+/* Si un modelo está saturado (503) o sin cuota, prueba con los demás antes de rendirse */
 async function gemini(contents) {
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(aiModel())}:generateContent`, {
+  const models = [...new Set([aiModel(), ...AI_FALLBACKS])];
+  let lastErr;
+  for (const m of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { return await geminiOnce(contents, m); }
+      catch (e) {
+        lastErr = e;
+        if (e.status !== 503 && e.status !== 429 && e.status !== 404) throw e;
+        if (e.status === 503 && attempt === 0) { await new Promise(r => setTimeout(r, 1500)); continue; }
+        break;
+      }
+    }
+  }
+  throw lastErr;
+}
+async function geminiOnce(contents, model) {
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": aiKey() },
     body: JSON.stringify({ systemInstruction: { parts: [{ text: sysPrompt() }] }, contents, tools: [{ functionDeclarations: FN_DECLS }], generationConfig: { temperature: 0.2 } })
   });
   if (!r.ok) {
     const e = await r.json().catch(() => ({})), m = e.error?.message || "";
-    if (r.status === 429) throw new Error("Has llegado al límite gratuito de la IA por ahora. Espera un minuto y vuelve a intentarlo.");
-    if (r.status === 400 && /API key/i.test(m)) throw new Error("La clave de Gemini no es válida. Revísala en Ajustes.");
-    if (r.status === 403) throw new Error("Google ha rechazado la clave. Revisa que esté bien copiada en Ajustes.");
-    if (r.status === 404) throw new Error(`El modelo "${aiModel()}" no existe. Cambia el modelo en Ajustes.`);
-    throw new Error(m || "Error " + r.status);
+    const fail = msg => Object.assign(new Error(msg), { status: r.status });
+    if (r.status === 429) throw fail("Has llegado al límite gratuito de la IA por ahora. Espera un rato y vuelve a intentarlo, o usa el modo básico.");
+    if (r.status === 503) throw fail("Los servidores de Google están saturados ahora mismo. Inténtalo en unos minutos; mientras, puedes quitar la clave en Ajustes y usar el modo básico.");
+    if (r.status === 400 && /API key/i.test(m)) throw fail("La clave de Gemini no es válida. Revísala en Ajustes.");
+    if (r.status === 403) throw fail("Google ha rechazado la clave. Revisa que esté bien copiada en Ajustes.");
+    if (r.status === 404) throw fail(`El modelo "${model}" ya no existe. Cambia el modelo en Ajustes.`);
+    throw fail(m || "Error " + r.status);
   }
   const j = await r.json();
   const c = j.candidates?.[0]?.content;
@@ -294,8 +314,9 @@ ACT.aiSettings = () => {
   formSheet("Asistente con IA", `
     <p class="lead">Para que el asistente entienda cualquier frase usa Gemini, de Google, que tiene una cuota gratuita. Crea tu clave gratis en <b>aistudio.google.com</b> (botón "Get API key") y pégala aquí.</p>
     ${field("Clave de Gemini", `<input class="input" id="aiK" value="${esc(aiKey())}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AIza…">`, "aiK")}
-    ${field("Modelo", inp("aiM", aiModel(), 'autocapitalize="off" spellcheck="false"'), "aiM")}
-    <p class="hint">La clave se guarda solo en este dispositivo. El modelo por defecto (${AI_DEFAULT_MODEL}) apunta siempre al Gemini Flash más reciente; cámbialo solo si Google lo retira. Deja la clave vacía para usar el modo básico sin IA.</p>
+    ${field("Modelo", sel("aiM", [["gemini-flash-lite-latest", "Gemini Flash-Lite (recomendado)"], ["gemini-flash-latest", "Gemini Flash (más listo, más saturado)"],
+      ...(AI_FALLBACKS.includes(aiModel()) ? [] : [[aiModel(), aiModel()]])], aiModel()), "aiM")}
+    <p class="hint">La clave se guarda solo en este dispositivo. Flash-Lite es el que tiene más cuota gratuita y menos saturación, y para las tareas del asistente va sobrado. Si un modelo está saturado, la app prueba sola con el otro. Deja la clave vacía para usar el modo básico sin IA.</p>
     <p class="hint">Al usar la IA, lo que escribes al asistente y un resumen de tu agenda se envían a Google para procesarlos. No le cuentes datos sensibles.</p>`, {
     submit: "Guardar",
     onSubmit: async root => {
