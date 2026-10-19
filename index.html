@@ -65,13 +65,19 @@
 
 <div class="ai-panel hidden" id="aiPanel" role="dialog" aria-modal="true" aria-labelledby="aiTitle">
   <header class="ai-head"><div><h3 id="aiTitle">Asistente</h3><span id="aiMode"></span></div>
-    <div><button class="btn-sm" id="aiNew">Nueva</button> <button class="btn-sm" id="aiClose">Cerrar</button></div></header>
+    <div class="ai-head-btns"><button class="btn-sm icon" id="aiSpeak" aria-label="Leer las respuestas en voz alta" aria-pressed="false">🔊</button><button class="btn-sm" id="aiNew">Nueva</button><button class="btn-sm" id="aiClose">Cerrar</button></div></header>
   <div class="ai-msgs" id="aiMsgs" aria-live="polite"></div>
   <div class="ai-chips" id="aiChips">
     <button data-q="¿Qué tengo mañana?">¿Qué tengo mañana?</button><button data-q="Añade una tarea: ">Nueva tarea</button>
     <button data-q="Añade un evento ">Nuevo evento</button><button data-q="Gasto ">Apuntar gasto</button><button data-q="Ya he desayunado">Ya he desayunado</button>
   </div>
-  <form class="ai-form" id="aiForm"><input class="input" id="aiInput" placeholder="Escribe lo que necesitas…" autocomplete="off" enterkeyhint="send">
+  <div class="ai-attach hidden" id="aiAttachList"></div>
+  <form class="ai-form" id="aiForm">
+    <button type="button" class="ai-icon" id="aiAttachBtn" aria-label="Adjuntar capturas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.6 8.6a5 5 0 01-7.1-7.1l8.6-8.6a3.4 3.4 0 014.8 4.8L10.1 17.8a1.7 1.7 0 01-2.4-2.4l7.9-7.9"/></svg></button>
+    <input type="file" id="aiFile" accept="image/*" multiple hidden>
+    <input class="input" id="aiInput" placeholder="Escribe o graba un audio…" autocomplete="off" enterkeyhint="send">
+    <div class="ai-rec" aria-live="polite"><i></i>Grabando <b id="aiRecTime">0:00</b><button type="button" class="link-btn" id="aiRecCancel">Cancelar</button></div>
+    <button type="button" class="ai-icon mic" id="aiMic" aria-label="Grabar mensaje de voz"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg><svg class="stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg></button>
     <button class="btn-sm primary" id="aiSend" type="submit">Enviar</button></form>
 </div>
 <div class="scrim hidden" id="scrim"></div>

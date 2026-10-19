@@ -59,11 +59,9 @@ function zoneValues(det) {
 
 /* ---------- Datos: últimas 4 semanas o plan ---------- */
 function muscleData(mode) {
-  if (mode === "plan") return { det: planDetailSets(), weeks: 1 };
-  const to = todayKey(), from = keyOf(addDays(new Date(), -27));
-  const det = detailSets(from, to), out = {};
-  Object.entries(det).forEach(([m, n]) => out[m] = n / 4);
-  return { det: out, weeks: 4 };
+  if (mode === "plan") return { det: planDetailSets(), grp: planGroupSets(), weeks: 1 };
+  const to = todayKey(), from = keyOf(addDays(new Date(), -27)), per4 = o => { const r = {}; Object.entries(o).forEach(([m, n]) => r[m] = n / 4); return r; };
+  return { det: per4(detailSets(from, to)), grp: per4(groupSets(from, to)), weeks: 4 };
 }
 function trainingDaysPerWeek(group) {
   const from = keyOf(addDays(new Date(), -27)), days = new Set();
@@ -76,19 +74,28 @@ function trainingDaysPerWeek(group) {
 }
 
 /* ---------- Evaluación ---------- */
-const EVAL_GROUPS = [["Glúteos", 10, 20], ["Cuádriceps", 8, 20], ["Isquiotibiales", 8, 16], ["Aductores", 4, 12], ["Gemelos", 4, 12], ["Pecho", 8, 20],
-  ["Espalda", 10, 20], ["Hombros", 8, 20], ["Bíceps", 6, 16], ["Tríceps", 6, 16], ["Core", 4, 16], ["Zona lumbar", 3, 10]];
+/* Tu tabla de hipertrofia: series semanales [grupo, nombre, MV, MEV desde, MEV hasta, MAV desde, MAV hasta, MRV, frecuencia mínima] */
+const VOL_GUIDE = [
+  ["Cuádriceps", "Cuádriceps", 6, 8, 12, 12, 18, 20, 1.5], ["Isquiotibiales", "Isquios", 4, 6, 10, 10, 16, 20, 2],
+  ["Glúteos", "Glúteos", 0, 0, 4, 4, 12, 16, 2], ["Pecho", "Pectoral", 8, 10, 12, 12, 20, 22, 2],
+  ["Espalda", "Espalda", 8, 10, 14, 14, 22, 25, 2], ["Hombros", "Deltoides", 0, 6, 8, 16, 22, 26, 2],
+  ["Bíceps", "Bíceps", 0, 8, 14, 14, 20, 26, 2], ["Tríceps", "Tríceps", 0, 6, 10, 10, 14, 18, 2],
+  ["Trapecio", "Trapecio", 0, 1, 12, 12, 20, 26, 2], ["Gemelos", "Gemelos y sóleo", 0, 8, 12, 12, 16, 20, 2],
+  ["Core", "Core", 0, 1, 15, 16, 20, 25, 2]
+];
+const VOL_LABEL = { nada: "Nada", bajo: "Bajo MEV", mev: "MEV", mav: "MAV", alto: "Hacia MRV", pasado: "Pasa MRV" };
 function evaluate(mode) {
-  const { det } = muscleData(mode), groups = toGroups(det), good = [], improve = [], rows = [];
-  EVAL_GROUPS.forEach(([g, lo, hi]) => {
-    const n = groups[g] || 0;
-    const st = n < lo * 0.5 ? "muy-bajo" : n < lo ? "bajo" : n <= hi ? "ok" : "alto";
-    rows.push({ g, n, lo, hi, st });
+  const { det, grp } = muscleData(mode), groups = grp, good = [], improve = [], rows = [];
+  VOL_GUIDE.forEach(([g, name, mv, mevLo, mevHi, mavLo, mavHi, mrv, freq]) => {
+    const n = Math.round((groups[g] || 0) * 10) / 10;
+    const st = n === 0 ? "nada" : n < mevLo ? "bajo" : n < mavLo ? "mev" : n <= mavHi ? "mav" : n < mrv ? "alto" : "pasado";
+    rows.push({ g, name, n, mevLo, mavLo, mavHi, mrv, freq, st, ok: n >= mevLo && n < mrv && n > 0 });
   });
-  const okRows = rows.filter(r => r.st === "ok"), low = rows.filter(r => r.st === "muy-bajo" || r.st === "bajo"), high = rows.filter(r => r.st === "alto");
-  if (okRows.length) good.push(`Trabajas en un rango adecuado: ${okRows.map(r => r.g.toLowerCase()).join(", ")}.`);
-  low.forEach(r => improve.push(`${r.g}: unas ${fmtNum(r.n, 0)} series a la semana. Para ganar músculo suele recomendarse empezar en ${r.lo} o más.`));
-  high.forEach(r => improve.push(`${r.g}: unas ${fmtNum(r.n, 0)} series a la semana, por encima de ${r.hi}. Si notas que no te recuperas bien, reduce un poco.`));
+  const okRows = rows.filter(r => r.ok), low = rows.filter(r => r.st === "bajo" || r.st === "nada"), high = rows.filter(r => r.st === "pasado");
+  if (okRows.length) good.push(`Entre el MEV y el MRV: ${okRows.map(r => r.name.toLowerCase()).join(", ")}.`);
+  const inMav = rows.filter(r => r.st === "mav"); if (inMav.length) good.push(`En la zona MAV, la de mejor respuesta: ${inMav.map(r => r.name.toLowerCase()).join(", ")}.`);
+  low.forEach(r => improve.push(r.n === 0 ? `${r.name}: no le dedicas series directas. Tu tabla marca un MEV desde ${r.mevLo}.` : `${r.name}: unas ${fmtNum(r.n, 1)} series a la semana, por debajo de su MEV (${r.mevLo}).`));
+  high.forEach(r => improve.push(`${r.name}: unas ${fmtNum(r.n, 1)} series a la semana, en o por encima de su MRV (${r.mrv}). Te puede costar recuperarte; baja algo de volumen.`));
   const G = k => groups[k] || 0;
   const push = G("Pecho") + (det["Deltoides anterior"] || 0) + G("Tríceps"), pull = G("Espalda") + (det["Deltoides posterior"] || 0) + G("Bíceps");
   if (push + pull >= 6) {
@@ -102,7 +109,7 @@ function evaluate(mode) {
   if (G("Glúteos") >= 6 && (det["Glúteo medio"] || 0) < 3) improve.push("Casi todo tu trabajo de glúteo va al glúteo mayor. Una abducción o paseo lateral con banda trabaja el glúteo medio.");
   if (G("Hombros") >= 4 && (det["Deltoides posterior"] || 0) < 3) improve.push("El deltoides posterior está poco trabajado. Pájaros o face pull, 2 o 3 series, son suficientes.");
   if (mode !== "plan") {
-    ["Glúteos", "Cuádriceps", "Espalda", "Pecho"].forEach(g => { const f = trainingDaysPerWeek(g); if (G(g) >= 6 && f > 0 && f < 1.5) improve.push(`${g}: los entrenas unos ${fmtNum(f, 1)} días por semana. Repartir las series en 2 días suele dar mejores resultados.`); });
+    rows.filter(r => r.n >= 4).forEach(r => { const f = trainingDaysPerWeek(r.g); if (f > 0 && f < r.freq - 0.25) improve.push(`${r.name}: lo entrenas unos ${fmtNum(f, 1)} días por semana; tu tabla recomienda ${fmtNum(r.freq, 1)} o más.`); });
     const planned = S.d.fit_schedule.filter(p => p.kind === "gym").length * 4;
     const done = S.d.fit_sessions.filter(s => s.kind === "gym" && s.finished && s.date >= keyOf(addDays(new Date(), -27))).length;
     if (planned) { const pct = done / planned * 100; (pct >= 80 ? good : improve).push(pct >= 80 ? `Constancia: has hecho ${done} de unos ${planned} entrenos planificados en 4 semanas.` : `Constancia: ${done} de unos ${planned} entrenos planificados en 4 semanas. La regularidad es lo que más influye en el progreso.`); }
@@ -110,7 +117,7 @@ function evaluate(mode) {
     if (prog.up.length) good.push(`Progresas en ${prog.up.slice(0, 4).join(", ")}.`);
     if (prog.flat.length) improve.push(`Estancado en las últimas semanas: ${prog.flat.slice(0, 4).join(", ")}. Prueba a subir 1 o 2 repeticiones o un poco de peso.`);
   }
-  const score = Math.round(okRows.length / EVAL_GROUPS.length * 100);
+  const score = Math.round(okRows.length / VOL_GUIDE.length * 100);
   return { rows, good, improve, score, det, groups };
 }
 function progressionCheck() {
@@ -150,12 +157,13 @@ function viewMuscles() {
     h += `<div class="block" style="margin-top:20px"><h2>Más trabajados</h2>${muscleList(sorted.slice(0, 6))}</div>`;
     if (notWorked.length) h += `<div class="block"><h2>Poco o nada trabajados</h2><div class="mchips">${notWorked.map(m => `<span>${esc(m)}</span>`).join("")}</div></div>`;
     h += `<div class="block"><h2>Evaluación de tu entreno</h2>
-      <div class="eval-score"><b>${ev.score}</b><span>de 100<br>grupos musculares en un rango adecuado</span></div>
+      <div class="eval-score"><b>${ev.rows.filter(r => r.ok).length}<small>/${ev.rows.length}</small></b><span>grupos musculares<br>entre su MEV y su MRV</span></div>
       ${ev.good.length ? `<div class="eval-box good"><b>Lo que va bien</b>${ev.good.map(t => `<p>${esc(t)}</p>`).join("")}</div>` : ""}
       ${ev.improve.length ? `<div class="eval-box warn"><b>A mejorar</b>${ev.improve.map(t => `<p>${esc(t)}</p>`).join("")}</div>` : ""}
-      <div class="group-h">Series por grupo y rango orientativo</div>
-      <div class="eval-table">${ev.rows.map(r => `<div class="er ${r.st}"><span>${esc(r.g)}</span><b>${fmtNum(r.n, 1)}</b><small>${r.lo}-${r.hi}</small><i>${{ "muy-bajo": "Muy poco", bajo: "Poco", ok: "Bien", alto: "Mucho" }[r.st]}</i></div>`).join("")}</div>
-      <p class="hint">Rangos orientativos de series semanales para ganar músculo. Si tu objetivo es otro (por ejemplo, centrarte en glúteos), es normal y está bien que unos grupos queden por debajo. No sustituye la valoración de un entrenador.</p>
+      <div class="group-h">Series por semana frente a tu tabla</div>
+      <div class="eval-table"><div class="er head"><span>Grupo</span><b>Series</b><small>MEV–MRV</small><i>Zona</i></div>
+      ${ev.rows.map(r => `<div class="er ${r.st}"><span>${esc(r.name)}</span><b>${fmtNum(r.n, 1)}</b><small>${r.mevLo}–${r.mrv}</small><i>${VOL_LABEL[r.st]}</i></div>`).join("")}</div>
+      <p class="hint">Rangos de tu tabla guía de hipertrofia: el mínimo es el inicio del MEV y el máximo el MRV. MAV es la zona de mejor respuesta. Las series de músculos secundarios cuentan como media serie.</p>
     </div>`;
   }
   return h;

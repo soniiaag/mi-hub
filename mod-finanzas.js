@@ -97,6 +97,8 @@ function viewExpenses() {
   let h = `<div class="month-nav"><button class="icon-btn" data-act="finMonth" data-v="-1" aria-label="Mes anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg></button>
     <b>${esc(monthLabel(mk))}</b><button class="icon-btn" data-act="finMonth" data-v="1" aria-label="Mes siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button></div>
     <div class="money-grid two"><div><span>Gastado</span><b>${eur(total)}</b></div><div><span>Ingresos</span><b class="pos">${eur(inc)}</b></div></div>`;
+  const rev = S.d.fin_transactions.filter(t => t.needs_review);
+  if (rev.length) h = `<div class="callout soft-call"><div><b>${plural(rev.length, "gasto por revisar", "gastos por revisar")}</b><span>Llegaron de Apple Pay y no sé de qué categoría son. ${aiKey() ? "La IA los categoriza al abrir la app." : "Revisa la categoría; aprenderé el comercio para la próxima vez."}</span></div><button class="btn-sm primary" data-act="editTx" data-id="${rev[0].id}">Revisar</button></div>` + h;
   h += `<div class="block" style="margin-top:20px"><h2>Por categoría</h2>${cats.length || noSpend.length ? `<div class="cat-list">${cats.map(([c, v]) => catLine(c, v)).join("")}${noSpend.map(c => catLine(c, 0)).join("")}</div>
     <p class="hint">Toca una categoría para ponerle un presupuesto mensual.</p>` : `<div class="empty">Aún no hay gastos este mes. <button data-act="newTx">Añadir un gasto</button></div>`}</div>`;
   if (tx.length) {
@@ -106,7 +108,7 @@ function viewExpenses() {
       if (t.date !== cur) { if (cur) h += `</div>`; cur = t.date; h += `<div class="group-h">${esc(niceDate(t.date))}</div><div class="list">`; }
       const acc = t.account_id ? byId("fin_accounts", t.account_id) : null;
       h += `<button class="row tx" data-act="editTx" data-id="${t.id}"><span class="ci">${catIcon(t.category)}</span>
-        <span class="body"><span class="title">${esc(t.description || t.category || "Movimiento")}</span><span class="meta">${esc([t.description ? t.category : "", acc?.name].filter(Boolean).join(", "))}</span></span>
+        <span class="body"><span class="title">${esc(t.description || t.category || "Movimiento")}</span><span class="meta">${esc([t.description ? t.category : "", acc?.name].filter(Boolean).join(", "))}${t.source === "applepay" ? ` <span class="tag">Apple Pay</span>` : ""}${t.needs_review ? ` <span class="tag warn">Por revisar</span>` : ""}</span></span>
         <span class="amt ${t.kind === "ingreso" ? "pos" : ""}">${t.kind === "ingreso" ? "+" : "−"}${eur(t.amount)}</span></button>`;
     });
     h += `</div></div>`;
@@ -166,7 +168,8 @@ function openTx(t) {
       <input class="input" id="txCatOther" placeholder="O escribe otra categoría" value="${esc(cat && ![...CATS, ...INCOME_CATS].some(c => c[0] === cat) ? cat : "")}" style="margin-top:8px"></div>
     ${field("Fecha", `<input type="date" class="input" id="txDate" value="${esc(t?.date || defDate)}">`, "txDate")}
     ${field("Descripción", inp("txDesc", t?.description, 'placeholder="Opcional" maxlength="120"'), "txDesc")}
-    ${accs.length ? field("Cuenta", sel("txAcc", [["", "Sin indicar"], ...accs.map(a => [a.id, a.name])], t?.account_id || ""), "txAcc") : ""}`, {
+    ${accs.length ? field("Cuenta", sel("txAcc", [["", "Sin indicar"], ...accs.map(a => [a.id, a.name])], t?.account_id || ""), "txAcc") : ""}
+    ${t?.merchant ? `<p class="hint">Comercio: ${esc(t.merchant)}${t.card ? `, tarjeta: ${esc(t.card)}` : ""}. Si cambias la categoría, la recordaré para este comercio.</p>` : ""}`, {
     mount: root => {
       const bindCats = () => bindSeg(root, ".cat-chip", b => { cat = b.dataset.cat; $("#txCatOther", root).value = ""; });
       bindCats();
@@ -179,7 +182,8 @@ function openTx(t) {
       if (!amount || amount <= 0) return "Escribe un importe mayor que cero.";
       const category = val(root, "txCatOther") || cat || (kind === "gasto" ? "Otros" : "Otros ingresos");
       await save("fin_transactions", { kind, amount: Math.round(amount * 100) / 100, category, date: val(root, "txDate") || todayKey(),
-        description: val(root, "txDesc") || null, account_id: accs.length ? (val(root, "txAcc") || null) : (t?.account_id || null) }, t?.id);
+        description: val(root, "txDesc") || null, account_id: accs.length ? (val(root, "txAcc") || null) : (t?.account_id || null), needs_review: false }, t?.id);
+      if (t?.merchant && kind === "gasto" && (category !== t.category || t.needs_review)) await learnMerchant(t.merchant, category);
       toast(kind === "gasto" ? "Gasto guardado" : "Ingreso guardado");
     },
     onDelete: t ? () => remove("fin_transactions", t.id) : null
@@ -238,10 +242,12 @@ function openAccount(a) {
   formSheet(a ? "Editar cuenta" : "Nueva cuenta", `
     ${field("Nombre", inp("acName", a?.name, 'maxlength="60"'), "acName")}
     ${field("Tipo", sel("acKind", ACC_KINDS, a?.kind || "banco"), "acKind")}
-    ${a ? "" : field("Saldo actual (€)", numInp("acBal", "", "0"), "acBal")}`, {
+    ${a ? "" : field("Saldo actual (€)", numInp("acBal", "", "0"), "acBal")}
+    ${field("Tarjetas en Cartera (Apple Pay)", inp("acCards", a?.wallet_cards || "", 'placeholder="Por ejemplo: BBVA, Aqua"'), "acCards")}
+    <p class="hint">Escribe cómo se llama la tarjeta en la app Cartera (o una parte del nombre). Los pagos con esa tarjeta se asignarán a esta cuenta. Si tienes varias, sepáralas con comas.</p>`, {
     onSubmit: async root => {
       const name = val(root, "acName"); if (!name) return "Ponle un nombre a la cuenta.";
-      const saved = await save("fin_accounts", { name, kind: val(root, "acKind"), position: a?.position ?? S.d.fin_accounts.length }, a?.id);
+      const saved = await save("fin_accounts", { name, kind: val(root, "acKind"), position: a?.position ?? S.d.fin_accounts.length, wallet_cards: val(root, "acCards") || null }, a?.id);
       if (!a) { const v = num(val(root, "acBal")); if (v !== null) await save("fin_balances", { account_id: saved.id, amount: v, date: todayKey() }); }
       toast("Cuenta guardada");
     },
@@ -294,5 +300,50 @@ ACT.goalAdd = (el, d) => {
       const v = num(val(root, "gaAmt")); if (!v) return "Escribe una cantidad.";
       await save("fin_goals", { saved_amount: Math.max(0, Number(g.saved_amount) + v) }, g.id); toast("Aportación añadida");
     }
+  });
+};
+
+/* =====================================================================
+   Apple Pay: reglas aprendidas y configuración del Atajo
+   ===================================================================== */
+const GENERIC_WORDS = new Set(["sl", "s.l.", "sa", "s.a.", "slu", "the", "la", "el", "los", "las", "de", "del", "y", "tienda", "shop", "store", "pago", "compra", "tpv", "www", "com"]);
+function merchantPattern(m) {
+  const words = String(m || "").toLowerCase().replace(/[0-9*#]+/g, " ").replace(/[^\p{L}&.' -]/gu, " ").split(/\s+/).filter(w => w.length >= 3 && !GENERIC_WORDS.has(w));
+  if (!words.length) return null;
+  return words[0].length >= 5 || words.length === 1 ? words[0] : words.slice(0, 2).join(" ");
+}
+async function learnMerchant(merchant, category) {
+  const pattern = merchantPattern(merchant); if (!pattern || !category) return;
+  const ex = S.d.merchant_rules.find(r => r.pattern === pattern);
+  if (ex && ex.category === category) return;
+  await save("merchant_rules", { pattern, category }, ex?.id);
+}
+const applePayUrl = () => CFG.SUPABASE_URL.replace(/\/(rest\/v1\/?)?$/, "") + "/rest/v1/rpc/applepay_ingest";
+function newToken() { const b = new Uint8Array(24); crypto.getRandomValues(b); return [...b].map(x => x.toString(16).padStart(2, "0")).join(""); }
+const copyRow = (label, value, id) => `<div class="copy-row"><span class="lbl">${esc(label)}</span><div><code id="${id}">${esc(value)}</code><button type="button" class="btn-sm" data-copy="${id}">Copiar</button></div></div>`;
+ACT.applePaySetup = () => {
+  const tk = S.d.inbox_tokens[0];
+  openSheet(`${sheetHead("Gastos de Apple Pay")}
+    <p class="lead">Cada vez que pagues con Apple Pay, un Atajo del iPhone enviará el gasto a Mi Hub y se categorizará solo. Sigue la guía de instalación para crear el Atajo y copia estos datos en él.</p>
+    ${tk ? `${copyRow("URL", applePayUrl(), "apUrl")}${copyRow("Encabezado apikey", CFG.SUPABASE_ANON_KEY, "apKey")}${copyRow("p_token (tu clave secreta)", tk.token, "apTok")}
+      <p class="hint">La clave secreta es como una contraseña: no la compartas. Si crees que alguien la tiene, genera una nueva y actualiza el Atajo.</p>
+      <button type="button" class="btn soft" id="apTest">Enviar un gasto de prueba</button>
+      <button type="button" class="btn ghost" id="apNew">Generar una clave nueva</button>`
+    : `<button type="button" class="btn primary" id="apNew">Generar mi clave secreta</button>`}
+    <div class="form-sec" style="margin-top:18px">Tarjetas y cuentas</div>
+    <p class="hint" style="margin-top:0">Para saber de qué cuenta sale cada pago, entra en Finanzas → Cuentas, abre cada cuenta, pulsa "Editar nombre o tipo" y escribe el nombre de su tarjeta en Cartera.</p>`, root => {
+    $$("[data-copy]", root).forEach(b => b.addEventListener("click", async () => { try { await navigator.clipboard.writeText($("#" + b.dataset.copy, root).textContent); toast("Copiado"); } catch (_) { toast("No se ha podido copiar", true); } }));
+    $("#apNew", root)?.addEventListener("click", async () => {
+      if (tk && !confirm("Si generas una clave nueva, el Atajo dejará de funcionar hasta que pegues la nueva. ¿Continuar?")) return;
+      try { await save("inbox_tokens", { token: newToken() }, tk?.id); ACT.applePaySetup(); toast("Clave generada"); } catch (x) { toast(errMsg(x), true); }
+    });
+    $("#apTest", root)?.addEventListener("click", async () => {
+      try {
+        const r = await fetch(applePayUrl(), { method: "POST", headers: { apikey: CFG.SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+          body: JSON.stringify({ p_token: tk.token, p_amount: "1,00 €", p_merchant: "PRUEBA MI HUB", p_card: "Prueba" }) });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || "Error " + r.status);
+        await loadAll(); toast("Ha llegado un gasto de prueba de 1 €. Puedes borrarlo en Finanzas → Gastos.");
+      } catch (x) { toast("La prueba ha fallado: " + (x.message || x), true); }
+    });
   });
 };

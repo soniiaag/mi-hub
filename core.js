@@ -2,7 +2,7 @@
 /* =====================================================================
    Mi Hub · núcleo (utilidades, datos, navegación, formularios)
    ===================================================================== */
-const APP_VERSION = "Fase 5";
+const APP_VERSION = "Fase 6";
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -71,7 +71,7 @@ const TABLES = ["events", "tasks",
   "fit_exercises", "fit_routines", "fit_routine_exercises", "fit_schedule", "fit_sessions", "fit_sets",
   "fin_accounts", "fin_balances", "fin_transactions", "fin_recurring", "fin_budgets", "fin_goals",
   "user_profile", "body_measurements", "foods", "meal_entries", "diet_template", "personal_items", "event_categories",
-  "diet_days", "supplements", "supplement_logs"];
+  "diet_days", "supplements", "supplement_logs", "inbox_tokens", "merchant_rules"];
 
 const S = { user: null, d: {}, loaded: false, needsMigration: false, route: { mod: "inicio" }, ui: {} };
 TABLES.forEach(t => S.d[t] = []);

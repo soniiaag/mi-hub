@@ -8,7 +8,7 @@ const AI_KEY = "mihub-ai-key", AI_MODEL = "mihub-ai-model", AI_DEFAULT_MODEL = "
 const AI_FALLBACKS = ["gemini-flash-lite-latest", "gemini-flash-latest"];
 const aiKey = () => { try { return localStorage.getItem(AI_KEY) || ""; } catch (_) { return ""; } };
 const aiModel = () => { try { return localStorage.getItem(AI_MODEL) || AI_DEFAULT_MODEL; } catch (_) { return AI_DEFAULT_MODEL; } };
-const AI = { msgs: [], history: [], busy: false, pending: {} };
+const AI = { msgs: [], history: [], busy: false, pending: {}, attach: [] };
 
 /* ---------- Acciones que puede hacer ---------- */
 const RECUR_ES = { none: "", daily: "cada día", weekly: "cada semana", monthly: "cada mes", yearly: "cada año" };
@@ -73,6 +73,17 @@ const ACTIONS = {
       return { ok: true, marcadas: its.length };
     }
   },
+  actualizar_saldo: {
+    write: true,
+    describe: a => { const acc = findAccount(a.cuenta), prev = acc ? balanceOf(acc) : null;
+      return [`Actualizar saldo: ${acc?.name || a.cuenta}`, `${eur(Number(a.importe) || 0)}${prev !== null ? ` (antes ${eur(prev)})` : ""}`, acc ? "" : "No encuentro esa cuenta en Finanzas"].filter(Boolean); },
+    async run(a) {
+      const acc = findAccount(a.cuenta); if (!acc) throw new Error("No existe esa cuenta. Créala antes en Finanzas → Cuentas");
+      const v = Number(a.importe); if (!Number.isFinite(v)) throw new Error("Importe no válido");
+      await save("fin_balances", { account_id: acc.id, amount: Math.round(v * 100) / 100, date: isDate(a.fecha) ? a.fecha : todayKey() });
+      return { ok: true, cuenta: acc.name };
+    }
+  },
   consultar_agenda: {
     write: false,
     async run(a) {
@@ -87,6 +98,10 @@ const ACTIONS = {
     }
   }
 };
+function findAccount(name) {
+  const n = String(name || "").toLowerCase().trim(), accs = accountsSorted(); if (!n) return null;
+  return accs.find(a => a.name.toLowerCase() === n) || accs.find(a => a.name.toLowerCase().includes(n) || n.includes(a.name.toLowerCase())) || null;
+}
 function matchTask(q) {
   const s = String(q || "").toLowerCase().trim(); if (!s) return null;
   const p = S.d.tasks.filter(t => !t.done);
@@ -95,7 +110,7 @@ function matchTask(q) {
 
 /* ---------- Gemini ---------- */
 const S_ = (type, description, extra = {}) => ({ type, description, ...extra });
-const FN_DECLS = [
+const FN_BASE = [
   { name: "crear_evento", description: "Crea un evento en el calendario de Mi Hub.", parameters: { type: "OBJECT", required: ["titulo", "fecha"], properties: {
     titulo: S_("STRING", "Título corto del evento"), fecha: S_("STRING", "Fecha de inicio, formato AAAA-MM-DD"), fecha_fin: S_("STRING", "Fecha de fin si dura varios días, AAAA-MM-DD"),
     hora_inicio: S_("STRING", "HH:MM en 24 h. Omitir si es todo el día"), hora_fin: S_("STRING", "HH:MM en 24 h"), todo_el_dia: S_("BOOLEAN", "true si no tiene hora"),
@@ -112,6 +127,12 @@ const FN_DECLS = [
   { name: "consultar_agenda", description: "Devuelve eventos, tareas, entrenos y festivos entre dos fechas. Úsala para responder preguntas sobre qué tiene la usuaria.", parameters: { type: "OBJECT", properties: {
     desde: S_("STRING", "AAAA-MM-DD"), hasta: S_("STRING", "AAAA-MM-DD") } } }
 ];
+function fnDecls() {
+  const accs = accountsSorted().map(a => a.name);
+  if (!accs.length) return FN_BASE;
+  return [...FN_BASE, { name: "actualizar_saldo", description: "Actualiza el saldo total de una cuenta en Finanzas (por ejemplo, leído de una captura de la app del banco o del bróker).", parameters: { type: "OBJECT", required: ["cuenta", "importe"], properties: {
+    cuenta: S_("STRING", "Cuenta a actualizar", { enum: accs }), importe: S_("NUMBER", "Saldo o valor total de la cuenta en euros"), fecha: S_("STRING", "AAAA-MM-DD, por defecto hoy") } } }];
+}
 function sysPrompt() {
   const now = new Date();
   return `Eres el asistente de "Mi Hub", una app personal de organización. Respondes siempre en español, de forma breve y amable.
@@ -121,15 +142,18 @@ La app pedirá confirmación a la usuaria antes de guardar; no le preguntes "¿l
 Para preguntas sobre su agenda, usa consultar_agenda. Si te piden algo que la app no puede hacer, dilo con sencillez.
 Categorías de eventos: ${S.d.event_categories.map(c => c.name).join(", ") || "ninguna"}.
 Listas de tareas: ${[...new Set(["Personal", "Trabajo", ...S.d.tasks.map(t => t.list)])].join(", ")}.
-Categorías de gasto: ${CATS.map(c => c[0]).join(", ")}. De ingreso: ${INCOME_CATS.map(c => c[0]).join(", ")}.`;
+Categorías de gasto: ${CATS.map(c => c[0]).join(", ")}. De ingreso: ${INCOME_CATS.map(c => c[0]).join(", ")}.
+Cuentas en Finanzas: ${accountsSorted().map(a => `${a.name} (saldo actual ${eur(balanceOf(a))})`).join(", ") || "ninguna"}.
+Si te envían capturas de la app de un banco o bróker (BBVA, MyInvestor, Trade Republic…), identifica de qué entidad es cada una y llama a actualizar_saldo con el valor TOTAL de la cuenta (saldo disponible o valor total de la cartera, no la rentabilidad ni lo invertido). Si no encaja con ninguna cuenta o no se lee bien el importe, dilo.
+Si te envían un mensaje de voz, haz lo que se pide en él como si lo hubieran escrito. Tus respuestas pueden leerse en voz alta: escribe frases naturales, sin listas ni símbolos.`;
 }
 /* Si un modelo está saturado (503) o sin cuota, prueba con los demás antes de rendirse */
-async function gemini(contents) {
+async function gemini(contents, opts = {}) {
   const models = [...new Set([aiModel(), ...AI_FALLBACKS])];
   let lastErr;
   for (const m of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
-      try { return await geminiOnce(contents, m); }
+      try { return await geminiOnce(contents, m, opts); }
       catch (e) {
         lastErr = e;
         if (e.status !== 503 && e.status !== 429 && e.status !== 404) throw e;
@@ -140,10 +164,12 @@ async function gemini(contents) {
   }
   throw lastErr;
 }
-async function geminiOnce(contents, model) {
+async function geminiOnce(contents, model, opts = {}) {
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": aiKey() },
-    body: JSON.stringify({ systemInstruction: { parts: [{ text: sysPrompt() }] }, contents, tools: [{ functionDeclarations: FN_DECLS }], generationConfig: { temperature: 0.2 } })
+    body: JSON.stringify(opts.json
+      ? { systemInstruction: { parts: [{ text: opts.system || "Responde solo con JSON válido." }] }, contents, generationConfig: { temperature: 0.1, responseMimeType: "application/json" } }
+      : { systemInstruction: { parts: [{ text: sysPrompt() }] }, contents, tools: [{ functionDeclarations: fnDecls() }], generationConfig: { temperature: 0.2 } })
   });
   if (!r.ok) {
     const e = await r.json().catch(() => ({})), m = e.error?.message || "";
@@ -235,12 +261,17 @@ function drawAI() {
     if (m.who === "card") return `<div class="ai-card ${m.state}"><b>${m.state === "done" ? "Hecho" : m.state === "cancel" ? "Cancelado" : m.state === "error" ? "No se ha podido hacer" : "¿Lo guardo?"}</b>
       ${m.lines.map(l => `<span>${esc(l)}</span>`).join("")}${m.err ? `<span class="ai-err">${esc(m.err)}</span>` : ""}
       ${m.state === "ask" ? `<div class="ai-card-btns"><button class="btn-sm primary" data-ai="ok" data-i="${i}">Guardar</button><button class="btn-sm" data-ai="no" data-i="${i}">Cancelar</button></div>` : ""}</div>`;
-    return `<div class="ai-msg ${m.who}">${esc(m.text).replace(/\n/g, "<br>")}</div>`;
+    if (m.who === "me") return `<div class="ai-msg me">${m.media?.length ? `<div class="ai-media">${m.media.map(x => x.thumb ? `<img src="${x.thumb}" alt="Captura adjunta">` : `<span class="ai-audio">🎤 Mensaje de voz${x.secs ? ` (${fmtDur(x.secs)})` : ""}</span>`).join("")}</div>` : ""}${m.text ? esc(m.text).replace(/\n/g, "<br>") : ""}</div>`;
+    return `<div class="ai-msg bot">${esc(m.text).replace(/\n/g, "<br>")}${"speechSynthesis" in window ? `<button class="ai-say" data-say="${i}" aria-label="Leer en voz alta">🔊</button>` : ""}</div>`;
   }).join("") + (AI.busy ? `<div class="ai-msg bot typing"><i></i><i></i><i></i></div>` : "");
   box.scrollTop = box.scrollHeight;
   $("#aiMode").textContent = aiKey() ? "Con IA (Gemini)" : "Modo básico";
   $("#aiSend").disabled = AI.busy;
+  $("#aiAttachList").innerHTML = AI.attach.map((x, i) => `<span class="ai-thumb"><img src="${x.thumb}" alt=""><button type="button" data-unattach="${i}" aria-label="Quitar imagen">×</button></span>`).join("");
+  $("#aiAttachList").classList.toggle("hidden", !AI.attach.length);
+  $("#aiSpeak").setAttribute("aria-pressed", ttsOn());
 }
+const fmtDur = s => `${Math.floor(s / 60)}:${pad(Math.round(s % 60))}`;
 function askConfirm(name, args) {
   return new Promise(resolve => {
     const lines = ACTIONS[name].describe(args);
@@ -255,14 +286,17 @@ async function onCardClick(i, ok) {
   try { const r = await ACTIONS[m.name].run(m.args); m.state = "done"; drawAI(); res(r); }
   catch (e) { m.state = "error"; m.err = errMsg(e).replace(/^No se ha guardado: /, ""); drawAI(); res({ error: m.err }); }
 }
-async function sendAI(text) {
-  if (!text.trim() || AI.busy) return;
+async function sendAI(text, media = []) {
+  if ((!text.trim() && !media.length) || AI.busy) return;
   if (Object.keys(AI.pending).length) return toast("Primero guarda o cancela lo que tienes pendiente");
-  AI.msgs.push({ who: "me", text }); AI.busy = true; drawAI();
+  if (media.length && !aiKey()) { AI.msgs.push({ who: "bot", text: "Para entender fotos y mensajes de voz necesito la IA. Añade tu clave gratuita de Gemini en Ajustes → Asistente con IA. Mientras, puedes dictar con el micrófono del teclado." }); drawAI(); return; }
+  AI.msgs.push({ who: "me", text, media }); AI.busy = true; drawAI();
+  const before = AI.msgs.length;
   try {
-    if (!aiKey()) await basicTurn(text); else await geminiTurn(text);
+    if (!aiKey()) await basicTurn(text); else await geminiTurn(text, media);
   } catch (e) { AI.msgs.push({ who: "bot", text: e.message || "Ha habido un error." }); }
   AI.busy = false; drawAI();
+  if (ttsOn()) { const said = AI.msgs.slice(before).filter(m => m.who === "bot").map(m => m.text).join(" "); if (said) speak(said); }
 }
 async function basicTurn(text) {
   const c = basicParse(text);
@@ -278,9 +312,19 @@ function agendaText(r) {
     return `${cap(niceDate(d.fecha))}: ${parts.length ? parts.join("; ") : "nada apuntado"}.`;
   }).join("\n") + (r.tareas_vencidas.length ? `\nTienes ${plural(r.tareas_vencidas.length, "tarea vencida", "tareas vencidas")}: ${r.tareas_vencidas.join(", ")}.` : "");
 }
-async function geminiTurn(text) {
-  AI.history.push({ role: "user", parts: [{ text }] });
-  for (let step = 0; step < 5; step++) {
+async function geminiTurn(text, media = []) {
+  const parts = media.map(m => ({ inlineData: { mimeType: m.mime, data: m.data } }));
+  const hint = media.some(m => m.mime.startsWith("audio")) ? "(Mensaje de voz adjunto.)" : media.length ? "(Capturas adjuntas.)" : "";
+  parts.push({ text: [text, hint].filter(Boolean).join(" ") });
+  AI.history.push({ role: "user", parts });
+  try { await geminiLoop(); }
+  finally {
+    // no volver a enviar fotos ni audios en los siguientes mensajes
+    AI.history.forEach(c => c.parts = (c.parts || []).map(p => p.inlineData ? { text: p.inlineData.mimeType.startsWith("audio") ? "[mensaje de voz]" : "[captura]" } : p));
+  }
+}
+async function geminiLoop() {
+  for (let step = 0; step < 6; step++) {
     const content = await gemini(AI.history.slice(-30));
     AI.history.push(content);
     const parts = content.parts || [], calls = parts.filter(p => p.functionCall).map(p => p.functionCall);
@@ -303,10 +347,123 @@ async function geminiTurn(text) {
 /* ---------- Eventos del panel ---------- */
 document.addEventListener("DOMContentLoaded", () => {
   $("#aiClose").addEventListener("click", closeAssistant);
-  $("#aiForm").addEventListener("submit", e => { e.preventDefault(); const v = $("#aiInput").value; $("#aiInput").value = ""; sendAI(v); });
+  $("#aiForm").addEventListener("submit", e => { e.preventDefault(); const v = $("#aiInput").value; $("#aiInput").value = ""; const media = AI.attach.splice(0); sendAI(v || (media.length ? "Actualiza mis saldos con estas capturas." : ""), media); });
   $("#aiMsgs").addEventListener("click", e => { const b = e.target.closest("[data-ai]"); if (b) onCardClick(+b.dataset.i, b.dataset.ai === "ok"); });
   $("#aiChips").addEventListener("click", e => { const b = e.target.closest("[data-q]"); if (b) { $("#aiInput").value = b.dataset.q; $("#aiInput").focus(); } });
-  $("#aiNew").addEventListener("click", () => { AI.msgs = []; AI.history = []; AI.pending = {}; openAssistant(); });
+  $("#aiNew").addEventListener("click", () => { AI.msgs = []; AI.history = []; AI.pending = {}; AI.attach = []; openAssistant(); });
+  $("#aiAttachBtn").addEventListener("click", () => $("#aiFile").click());
+  $("#aiFile").addEventListener("change", async e => {
+    const files = [...e.target.files].slice(0, 4); e.target.value = "";
+    for (const f of files) { try { AI.attach.push(await prepImage(f)); } catch (_) { toast("No he podido leer esa imagen", true); } }
+    drawAI();
+  });
+  $("#aiAttachList").addEventListener("click", e => { const b = e.target.closest("[data-unattach]"); if (b) { AI.attach.splice(+b.dataset.unattach, 1); drawAI(); } });
+  $("#aiMic").addEventListener("click", toggleRecording);
+  $("#aiRecCancel").addEventListener("click", () => stopRecording(false));
+  $("#aiSpeak").addEventListener("click", () => { const on = !ttsOn(); try { localStorage.setItem("mihub-ai-tts", on ? "1" : ""); } catch (_) {} if (on) speak("Te leeré las respuestas en voz alta."); else speechSynthesis.cancel(); drawAI(); });
+  $("#aiMsgs").addEventListener("click", e => { const b = e.target.closest("[data-say]"); if (b) speak(AI.msgs[+b.dataset.say]?.text || ""); });
+});
+
+/* ---------- Fotos: se reducen antes de enviarlas ---------- */
+function prepImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const max = 1600, k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      const data = c.toDataURL("image/jpeg", 0.85);
+      const t = document.createElement("canvas"), tk = 120 / Math.max(c.width, c.height); t.width = c.width * tk; t.height = c.height * tk;
+      t.getContext("2d").drawImage(c, 0, 0, t.width, t.height);
+      URL.revokeObjectURL(url);
+      resolve({ mime: "image/jpeg", data: data.split(",")[1], thumb: t.toDataURL("image/jpeg", 0.7) });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("imagen")); };
+    img.src = url;
+  });
+}
+
+/* ---------- Voz: grabar, convertir a WAV y enviar ---------- */
+let rec = null, recChunks = [], recStart = 0, recTimer = null, recStream = null;
+async function toggleRecording() {
+  if (rec) return stopRecording(true);
+  if (AI.busy) return;
+  if (!aiKey()) { AI.msgs.push({ who: "bot", text: "Para los mensajes de voz necesito la IA. Añade tu clave gratuita de Gemini en Ajustes. Mientras, puedes dictar con el micrófono del teclado." }); drawAI(); return; }
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast("Tu navegador no permite grabar audio aquí. Usa el micrófono del teclado.", true);
+  try { recStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (_) { return toast("No tengo permiso para usar el micrófono. Actívalo en Ajustes del iPhone → Safari → Micrófono.", true); }
+  recChunks = []; rec = new MediaRecorder(recStream);
+  rec.ondataavailable = e => e.data.size && recChunks.push(e.data);
+  rec.start(); recStart = Date.now();
+  $("#aiForm").classList.add("recording");
+  recTimer = setInterval(() => { const s = (Date.now() - recStart) / 1000; $("#aiRecTime").textContent = fmtDur(s); if (s >= 120) stopRecording(true); }, 250);
+}
+function stopRecording(send) {
+  if (!rec) return;
+  const r = rec, secs = (Date.now() - recStart) / 1000; rec = null;
+  clearInterval(recTimer); $("#aiForm").classList.remove("recording"); $("#aiRecTime").textContent = "0:00";
+  r.onstop = async () => {
+    recStream?.getTracks().forEach(t => t.stop()); recStream = null;
+    if (!send) return;
+    if (secs < 0.6) return toast("Mantén la grabación un poco más");
+    const blob = new Blob(recChunks, { type: r.mimeType || "audio/mp4" });
+    let media;
+    try { media = await toWav16k(blob); } catch (_) { media = { mime: (blob.type || "audio/mp4").split(";")[0], data: await blobB64(blob) }; }
+    sendAI($("#aiInput").value.trim(), [{ ...media, secs }]); $("#aiInput").value = "";
+  };
+  r.stop();
+}
+const blobB64 = b => new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(String(f.result).split(",")[1]); f.onerror = rej; f.readAsDataURL(b); });
+async function toWav16k(blob) {
+  const AC = window.AudioContext || window.webkitAudioContext, ac = new AC();
+  const buf = await new Promise((res, rej) => { blob.arrayBuffer().then(ab => ac.decodeAudioData(ab, res, rej)).catch(rej); });
+  ac.close && ac.close();
+  const rate = 16000, len = Math.ceil(buf.duration * rate), off = new OfflineAudioContext(1, len, rate);
+  const src = off.createBufferSource(); src.buffer = buf; src.connect(off.destination); src.start();
+  const out = (await off.startRendering()).getChannelData(0);
+  const dv = new DataView(new ArrayBuffer(44 + out.length * 2)), w = (o, t) => [...t].forEach((c, i) => dv.setUint8(o + i, c.charCodeAt(0)));
+  w(0, "RIFF"); dv.setUint32(4, 36 + out.length * 2, true); w(8, "WAVE"); w(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); w(36, "data"); dv.setUint32(40, out.length * 2, true);
+  for (let i = 0; i < out.length; i++) { const v = Math.max(-1, Math.min(1, out[i])); dv.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true); }
+  return { mime: "audio/wav", data: await blobB64(new Blob([dv], { type: "audio/wav" })) };
+}
+
+/* ---------- Leer en voz alta ---------- */
+const ttsOn = () => { try { return localStorage.getItem("mihub-ai-tts") === "1"; } catch (_) { return false; } };
+function speak(text) {
+  if (!("speechSynthesis" in window) || !text) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/[*_#•]/g, ""));
+  u.lang = "es-ES"; u.rate = 1.02;
+  const v = speechSynthesis.getVoices().filter(x => x.lang?.toLowerCase().startsWith("es"));
+  u.voice = v.find(x => /es-ES/i.test(x.lang) && /m[oó]nica|paulina|marisol|siri|premium|enhanced|mejorad/i.test(x.name)) || v.find(x => /es-ES/i.test(x.lang)) || v[0] || null;
+  speechSynthesis.speak(u);
+}
+
+/* ---------- Categorizar con IA los gastos de Apple Pay por revisar ---------- */
+let categorizing = false;
+document.addEventListener("hub:loaded", async () => {
+  if (categorizing || !aiKey() || S.needsMigration) return;
+  const pend = S.d.fin_transactions.filter(t => t.needs_review && t.merchant).slice(0, 25);
+  if (!pend.length) return;
+  categorizing = true;
+  try {
+    const cats = CATS.map(c => c[0]);
+    const prompt = `Categoriza estos pagos con tarjeta hechos en España. Para cada uno elige UNA categoría de esta lista: ${cats.join(", ")}.
+Devuelve un JSON: [{"id": "...", "categoria": "..."}]. Si no tienes ni idea, usa "Otros".
+${JSON.stringify(pend.map(t => ({ id: t.id, comercio: t.merchant, importe: Number(t.amount) })))}`;
+    const c = await gemini([{ role: "user", parts: [{ text: prompt }] }], { json: true, system: "Eres un clasificador de gastos. Responde solo con JSON válido." });
+    const txt = (c.parts || []).map(p => p.text || "").join("");
+    const arr = JSON.parse(txt.replace(/```json|```/g, "").trim());
+    let n = 0;
+    for (const r of Array.isArray(arr) ? arr : []) {
+      const t = byId("fin_transactions", r.id); if (!t || !cats.includes(r.categoria)) continue;
+      await save("fin_transactions", { category: r.categoria, needs_review: false }, t.id);
+      if (r.categoria !== "Otros") await learnMerchant(t.merchant, r.categoria);
+      n++;
+    }
+    if (n) { toast(`${plural(n, "gasto de Apple Pay categorizado", "gastos de Apple Pay categorizados")} con IA`); render(); }
+  } catch (_) { /* si falla, se reintentará la próxima vez */ } finally { categorizing = false; }
 });
 
 /* ---------- Ajustes de la IA ---------- */

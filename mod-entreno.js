@@ -71,7 +71,7 @@ const EX_LIB = [
 const MUSCLE_DETAIL = {
   "Glúteo mayor": "Glúteos", "Glúteo medio": "Glúteos", "Abductores": "Glúteos", "Cuádriceps": "Cuádriceps", "Isquiotibiales": "Isquiotibiales",
   "Aductores": "Aductores", "Gemelos": "Gemelos", "Sóleo": "Gemelos", "Pectoral mayor": "Pecho", "Pectoral superior": "Pecho",
-  "Dorsal ancho": "Espalda", "Trapecio medio y romboides": "Espalda", "Trapecio superior": "Espalda", "Erectores espinales": "Zona lumbar",
+  "Dorsal ancho": "Espalda", "Trapecio medio y romboides": "Espalda", "Trapecio superior": "Trapecio", "Erectores espinales": "Zona lumbar",
   "Deltoides anterior": "Hombros", "Deltoides lateral": "Hombros", "Deltoides posterior": "Hombros", "Manguito rotador": "Hombros",
   "Bíceps": "Bíceps", "Braquial": "Bíceps", "Braquiorradial": "Antebrazo", "Antebrazo": "Antebrazo", "Tríceps": "Tríceps",
   "Recto abdominal": "Core", "Oblicuos": "Core", "Transverso abdominal": "Core"
@@ -147,6 +147,24 @@ function addExSets(out, ex, n, fallback) {
   pr.forEach(m => out[m] = (out[m] || 0) + n);
   secOf(ex).forEach(m => out[m] = (out[m] || 0) + n * 0.5);
 }
+/* Series por grupo: cada serie cuenta como máximo 1 por grupo (1 si es músculo principal, 0,5 si solo secundario) */
+function addExGroupSets(out, ex, n, fallback) {
+  const pr = primOf(ex);
+  if (!pr.length) { const g = ex?.muscle || fallback; if (g && g !== "Cardio") out[g] = (out[g] || 0) + n; return; }
+  const gp = new Set(pr.map(m => MUSCLE_DETAIL[m] || m)), gs = new Set(secOf(ex).map(m => MUSCLE_DETAIL[m] || m));
+  gp.forEach(g => out[g] = (out[g] || 0) + n);
+  gs.forEach(g => { if (!gp.has(g)) out[g] = (out[g] || 0) + n * 0.5; });
+}
+function groupSets(fromK, toK) {
+  const ids = new Set(S.d.fit_sessions.filter(s => s.date >= fromK && s.date <= toK).map(s => s.id)), out = {};
+  S.d.fit_sets.filter(s => s.done && ids.has(s.session_id)).forEach(s => addExGroupSets(out, byId("fit_exercises", s.exercise_id), 1, s.muscle));
+  return out;
+}
+function planGroupSets() {
+  const out = {};
+  S.d.fit_schedule.filter(p => p.kind === "gym" && p.routine_id).forEach(p => rexOf(p.routine_id).forEach(x => addExGroupSets(out, byId("fit_exercises", x.exercise_id), x.target_sets || 0)));
+  return out;
+}
 function toGroups(det) {
   const out = {};
   Object.entries(det).forEach(([m, n]) => { const g = m.startsWith("~") ? m.slice(1) : (MUSCLE_DETAIL[m] || m); out[g] = (out[g] || 0) + n; });
@@ -154,7 +172,7 @@ function toGroups(det) {
 }
 function weekMuscleSets(offsetWeeks = 0) {
   const a = keyOf(addDays(weekStart(new Date()), 7 * offsetWeeks)), b = keyOf(addDays(fromKey(a), 6));
-  return toGroups(detailSets(a, b));
+  return groupSets(a, b);
 }
 /* Series semanales según el plan (rutinas asignadas a cada día) */
 function planDetailSets() {

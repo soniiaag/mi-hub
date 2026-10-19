@@ -89,6 +89,7 @@ MOD.ajustes = {
     </div></div>
     <div class="block"><h2>Asistente</h2><div class="settings">
       <button class="item" data-act="aiSettings">Asistente con IA <small>${aiKey() ? "Activado" : "Modo básico"}</small></button>
+      <button class="item" data-act="applePaySetup">Gastos automáticos de Apple Pay <small>${S.d.inbox_tokens.length ? "Configurado" : "Sin configurar"}</small></button>
     </div></div>
     <div class="block"><h2>Cuenta</h2><div class="settings">
       <div class="item">Sesión iniciada <small>${esc(S.user?.email || "")}</small></div>
